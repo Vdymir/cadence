@@ -57,6 +57,13 @@ function getIosIcon() {
 export default ({ config }: ConfigContext): ExpoConfig => {
   const iosIcon = getIosIcon();
   const baseScheme = typeof config.scheme === 'string' ? config.scheme : 'clarity';
+  const marketingWeb = process.env.EXPO_MARKETING_WEB === '1';
+  const plugins = (config.plugins ?? []).map((plugin) => {
+    const name = Array.isArray(plugin) ? plugin[0] : plugin;
+    return name === 'expo-router' && marketingWeb
+      ? (['expo-router', { root: 'web' }] as [string, { root: string }])
+      : plugin;
+  });
 
   return {
     ...config,
@@ -70,6 +77,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ...config.updates,
       url: 'https://u.expo.dev/654f9e52-e892-44e4-a4b8-9aa700fef15b',
     },
+    experiments: {
+      ...config.experiments,
+      typedRoutes: marketingWeb ? false : config.experiments?.typedRoutes,
+    },
     ios: {
       ...config.ios,
       bundleIdentifier: getBundleId(),
@@ -80,7 +91,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       package: getBundleId(),
     },
     plugins: [
-      ...(config.plugins ?? []),
+      ...plugins,
       ['expo-dev-client', { addGeneratedScheme: process.env.APP_VARIANT === 'development' }],
     ],
   };
