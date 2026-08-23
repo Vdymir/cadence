@@ -95,10 +95,6 @@ export const marketing = {
     pressed: 0.68,
   },
   artwork: {
-    desktopImageWidth: 1449,
-    desktopImageHeight: 815,
-    mobileImageWidth: 1357,
-    mobileImageHeight: 763,
     fadeHeight: 190,
     fade:
       'linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.18) 28%, rgba(255,255,255,0.72) 70%, #FFFFFF 100%)',

@@ -8,26 +8,79 @@ import Mic01Icon from '@hugeicons-pro/core-stroke-rounded/Mic01Icon';
 import PlayIcon from '@hugeicons-pro/core-stroke-rounded/PlayIcon';
 import Target01Icon from '@hugeicons-pro/core-stroke-rounded/Target01Icon';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react-native';
+import { Asset, useAssets } from 'expo-asset';
 import { Link } from 'expo-router';
 import Head from 'expo-router/head';
-import { useEffect, useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import {
   Image,
   Pressable,
   ScrollView,
   StyleSheet,
   View,
+  type ViewProps,
   type ViewStyle,
   useWindowDimensions,
 } from 'react-native';
+import Animated, { cubicBezier, useReducedMotion } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/ui';
-import { marketing, radius, spacing } from '@/constants/theme';
+import { marketing, motion, radius, spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 import { ClarityMark } from './clarity-mark';
 
 const HERO_IMAGE = require('@/assets/marketing/clarity-hero-cutout.png');
+const HERO_IMAGE_URI = Asset.fromModule(HERO_IMAGE).uri;
+
+const subscribeToHydration = () => () => {};
+const getClientHydrationSnapshot = () => true;
+const getServerHydrationSnapshot = () => false;
+
+const FADE_IN = {
+  from: { opacity: 0 },
+  to: { opacity: 1 },
+};
+
+const FADE_IN_UP = {
+  from: {
+    opacity: 0,
+    transform: [{ translateY: motion.enterOffset }],
+  },
+  to: {
+    opacity: 1,
+    transform: [{ translateY: 0 }],
+  },
+};
+
+const EASE_OUT = cubicBezier(...motion.easeOut);
+
+type MarketingRevealProps = ViewProps & {
+  order: number;
+};
+
+/** One-shot first-load entrance. The page mounts this only after its fonts,
+ * viewport, and hero asset are ready, so the animation never masks reflow. */
+function MarketingReveal({ order, style, children, ...rest }: MarketingRevealProps) {
+  const reducedMotion = useReducedMotion();
+
+  return (
+    <Animated.View
+      {...rest}
+      style={[
+        style,
+        {
+          animationName: reducedMotion ? FADE_IN : FADE_IN_UP,
+          animationDuration: `${reducedMotion ? motion.fast : motion.slow}ms`,
+          animationDelay: `${order * motion.stagger}ms`,
+          animationTimingFunction: EASE_OUT,
+          animationFillMode: 'both',
+        },
+      ]}>
+      {children}
+    </Animated.View>
+  );
+}
 
 const FEATURES = [
   {
@@ -83,7 +136,7 @@ function Navigation({ desktop, pageWidth }: { desktop: boolean; pageWidth: numbe
 
   if (desktop) {
     return (
-      <View style={[styles.navigation, { width: pageWidth }]}>
+      <MarketingReveal order={0} style={[styles.navigation, { width: pageWidth }]}>
         <Wordmark />
         <View style={styles.navLinks}>
           {NAV_ITEMS.map((item, index) => (
@@ -102,30 +155,34 @@ function Navigation({ desktop, pageWidth }: { desktop: boolean; pageWidth: numbe
           ))}
         </View>
         <Link href={marketing.links.earlyTester} asChild>
-          <Pressable
-            accessibilityRole="link"
-            style={({ pressed }) => [
-              styles.navCta,
-              { borderColor: colors.marketingLine },
-              pressed && styles.pressed,
-            ]}>
-            <ThemedText variant="marketingNavStrong" tone="marketingPrimary">
-              Get early access
-            </ThemedText>
-            <HugeiconsIcon
-              icon={ArrowUpRight01Icon}
-              size={marketing.size.metaIcon}
-              color={colors.marketingInk}
-              strokeWidth={marketing.iconStrokeWidth}
-            />
+          <Pressable accessibilityRole="link">
+            {({ pressed }) => (
+              <View
+                style={[
+                  styles.navCta,
+                  { borderColor: colors.marketingLine },
+                  pressed && styles.pressed,
+                ]}>
+                <ThemedText variant="marketingNavStrong" tone="marketingPrimary">
+                  Get early access
+                </ThemedText>
+                <HugeiconsIcon
+                  icon={ArrowUpRight01Icon}
+                  size={marketing.size.metaIcon}
+                  color={colors.marketingInk}
+                  strokeWidth={marketing.iconStrokeWidth}
+                />
+              </View>
+            )}
           </Pressable>
         </Link>
-      </View>
+      </MarketingReveal>
     );
   }
 
   return (
-    <View
+    <MarketingReveal
+      order={0}
       style={[
         styles.navigationMobile,
         { borderColor: colors.marketingLine, width: pageWidth },
@@ -173,7 +230,7 @@ function Navigation({ desktop, pageWidth }: { desktop: boolean; pageWidth: numbe
           ))}
         </View>
       ) : null}
-    </View>
+    </MarketingReveal>
   );
 }
 
@@ -193,6 +250,7 @@ function AppIcon({ mobile }: { mobile: boolean }) {
 
 function HeroAction({
   icon,
+  iconStyle,
   label,
   mobile,
   primary = false,
@@ -200,6 +258,7 @@ function HeroAction({
   onPress,
 }: {
   icon: IconSvgElement;
+  iconStyle?: ViewStyle;
   label: string;
   mobile: boolean;
   primary?: boolean;
@@ -229,6 +288,7 @@ function HeroAction({
       </ThemedText>
       <HugeiconsIcon
         icon={icon}
+        style={iconStyle}
         size={mobile ? marketing.size.actionIconMobile : marketing.size.actionIcon}
         color={primary ? colors.marketingOnInverse : colors.marketingInk}
         strokeWidth={marketing.iconStrokeWidth}
@@ -238,32 +298,23 @@ function HeroAction({
 }
 
 function HeroArtwork({ desktop, width }: { desktop: boolean; width: number }) {
-  const desktopWidth = Math.min(width, marketing.width.heroArtwork);
-  const desktopScale = desktopWidth / marketing.width.heroArtwork;
+  const referenceWidth = desktop
+    ? marketing.width.heroArtwork
+    : marketing.width.mobileArtwork;
+  const referenceHeight = desktop
+    ? marketing.height.artwork
+    : marketing.height.artworkMobile;
+  const artworkWidth = Math.min(width, referenceWidth);
+  const artworkHeight = referenceHeight * (artworkWidth / referenceWidth);
+  const artworkSize = { width: artworkWidth, height: artworkHeight };
 
   return (
-    <View
-      style={[
-        styles.artwork,
-        desktop
-          ? {
-              width: desktopWidth,
-              height: marketing.height.artwork * desktopScale,
-            }
-          : styles.artworkMobile,
-      ]}>
+    <View style={[styles.artwork, artworkSize]}>
       <Image
         accessibilityLabel="A hand holding a phone while Clarity follows a spoken passage"
         source={HERO_IMAGE}
         resizeMode="contain"
-        style={
-          desktop
-            ? {
-                width: marketing.artwork.desktopImageWidth * desktopScale,
-                height: marketing.artwork.desktopImageHeight * desktopScale,
-              }
-            : styles.artworkImageMobile
-        }
+        style={artworkSize}
       />
       {desktop ? <View pointerEvents="none" style={[styles.artworkFade, webFadeStyle]} /> : null}
     </View>
@@ -282,7 +333,8 @@ function Hero({ desktop, pageWidth }: { desktop: boolean; pageWidth: number }) {
         { width: pageWidth },
         !desktop && styles.heroMobile,
       ]}>
-      <View
+      <MarketingReveal
+        order={1}
         style={[
           styles.heroCopy,
           { width: copyWidth },
@@ -322,12 +374,14 @@ function Hero({ desktop, pageWidth }: { desktop: boolean; pageWidth: number }) {
           Clarity listens while you practice, follows every word, and shows you what to work on
           next.
         </ThemedText>
-      </View>
+      </MarketingReveal>
 
-      <View style={[styles.heroActions, !desktop && styles.heroActionsMobile]}>
+      <MarketingReveal order={1} style={[styles.heroActions, !desktop && styles.heroActionsMobile]}>
         <View style={[styles.comingSoonAction, !desktop && styles.comingSoonActionMobile]}>
           <HeroAction
             icon={ArrowRight01Icon}
+            // The chevron's path sits just below the SF Rounded label's optical center.
+            iconStyle={{ transform: [{ translateY: -0.5 }] }}
             label="Get Clarity"
             mobile={!desktop}
             primary
@@ -345,9 +399,10 @@ function Hero({ desktop, pageWidth }: { desktop: boolean; pageWidth: number }) {
           mobile={!desktop}
           onPress={() => scrollTo('features')}
         />
-      </View>
+      </MarketingReveal>
 
-      <View
+      <MarketingReveal
+        order={1}
         nativeID="privacy"
         style={[
           styles.privacy,
@@ -366,9 +421,11 @@ function Hero({ desktop, pageWidth }: { desktop: boolean; pageWidth: number }) {
           style={!desktop && styles.privacyCopyMobile}>
           No account. No cloud history. Your practice stays on your device.
         </ThemedText>
-      </View>
+      </MarketingReveal>
 
-      <HeroArtwork desktop={desktop} width={pageWidth} />
+      <MarketingReveal order={2} style={styles.artworkReveal}>
+        <HeroArtwork desktop={desktop} width={pageWidth} />
+      </MarketingReveal>
     </View>
   );
 }
@@ -492,11 +549,17 @@ function Features({ desktop, pageWidth }: { desktop: boolean; pageWidth: number 
 export function MarketingLandingPage() {
   const { colors } = useTheme();
   const { width: viewportWidth } = useWindowDimensions();
-  const [hydrated, setHydrated] = useState(false);
-  // Render the 390px artboard on the server and on the first client pass. Once
-  // hydration finishes, switch to the real viewport without a markup mismatch.
-  useEffect(() => setHydrated(true), []);
-  const width = hydrated ? viewportWidth : marketing.breakpoints.mobile;
+  const [heroAssets, heroAssetError] = useAssets([HERO_IMAGE]);
+  const hydrated = useSyncExternalStore(
+    subscribeToHydration,
+    getClientHydrationSnapshot,
+    getServerHydrationSnapshot,
+  );
+
+  // Do not paint the server's fallback artboard. The old 390px-first pass was
+  // visible on desktop, then reflowed the entire page after hydration.
+  const ready = hydrated && Boolean(heroAssets || heroAssetError);
+  const width = viewportWidth;
   const desktop = width >= marketing.breakpoints.desktop;
   const phone = width < marketing.breakpoints.tablet;
   const availableWidth = Math.max(width - marketing.inset.gutter * 2, 0);
@@ -513,15 +576,20 @@ export function MarketingLandingPage() {
           name="description"
           content="Clarity follows every word while you practice and shows you what to work on next."
         />
+        <link rel="preload" as="image" href={HERO_IMAGE_URI} />
       </Head>
-      <ScrollView
-        style={[styles.page, { backgroundColor: colors.marketingCanvas }]}
-        contentContainerStyle={styles.pageContent}
-        showsVerticalScrollIndicator={false}>
-        <Navigation desktop={desktop} pageWidth={pageWidth} />
-        <Hero desktop={desktop} pageWidth={pageWidth} />
-        <Features desktop={desktop} pageWidth={pageWidth} />
-      </ScrollView>
+      {ready ? (
+        <ScrollView
+          style={[styles.page, { backgroundColor: colors.marketingCanvas }]}
+          contentContainerStyle={styles.pageContent}
+          showsVerticalScrollIndicator={false}>
+          <Navigation desktop={desktop} pageWidth={pageWidth} />
+          <Hero desktop={desktop} pageWidth={pageWidth} />
+          <Features desktop={desktop} pageWidth={pageWidth} />
+        </ScrollView>
+      ) : (
+        <View style={[styles.page, { backgroundColor: colors.marketingCanvas }]} />
+      )}
     </>
   );
 }
@@ -703,13 +771,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
   },
-  artworkMobile: {
-    height: marketing.height.artworkMobile,
-    width: marketing.width.mobileArtwork,
-  },
-  artworkImageMobile: {
-    height: marketing.artwork.mobileImageHeight,
-    width: marketing.artwork.mobileImageWidth,
+  artworkReveal: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
   },
   artworkFade: {
     bottom: 0,

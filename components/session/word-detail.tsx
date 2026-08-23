@@ -1,7 +1,7 @@
-import { Mic01Icon, VolumeHighIcon } from '@hugeicons-pro/core-stroke-rounded';
+import { Cancel01Icon, Mic01Icon, VolumeHighIcon } from '@hugeicons-pro/core-stroke-rounded';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/ui';
@@ -10,13 +10,12 @@ import { useTheme } from '@/hooks/use-theme';
 import { playOwnAttempt, speakWord } from '@/services/word-pronunciation';
 import { PHONEME_WEAK_MAX, weakestPhoneme, type ResultWord } from '@/types/session';
 
-const ACTION_HEIGHT = 40;
-const ACTION_ICON = 17;
-
 export type WordDetailProps = {
   word: ResultWord;
   /** The session's concatenated recording, for playing the user's own attempt. */
   audioUri: string | null;
+  /** Explicit dismissal for Android, assistive technology and users who do not drag sheets. */
+  onDismiss: () => void;
 };
 
 /** IPA reads as a symbol, not a letter, when it sits between slashes. */
@@ -103,7 +102,7 @@ function Action({
       ) : (
         <HugeiconsIcon
           icon={icon}
-          size={ACTION_ICON}
+          size={spacing.xl}
           color={failed ? colors.tertiary : colors.foreground}
           strokeWidth={1.5}
         />
@@ -152,8 +151,8 @@ function Syllables({ word }: { word: ResultWord }) {
   );
 }
 
-/** Expanded detail for one tapped word in the breakdown. */
-export function WordDetail({ word, audioUri }: WordDetailProps) {
+/** Detail content for one tapped word, sized intrinsically for a native form sheet. */
+export function WordDetail({ word, audioUri, onDismiss }: WordDetailProps) {
   const { colors } = useTheme();
   const spoken = word.word.replace(/[^\p{L}\p{N}'-]/gu, '');
   const canHearOwn =
@@ -166,19 +165,39 @@ export function WordDetail({ word, audioUri }: WordDetailProps) {
   );
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.fill }]}>
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      contentInsetAdjustmentBehavior="automatic"
+      contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <ThemedText variant="title3" weight="bold">
+        <ThemedText variant="title3" weight="bold" style={styles.word}>
           {spoken}
         </ThemedText>
-        {word.score != null ? (
-          <ThemedText variant="footnote" tone="secondary">
-            {Math.round(word.score)}
-            <ThemedText variant="caption" tone="tertiary">
-              {' /100'}
+        <View style={styles.headerActions}>
+          {word.score != null ? (
+            <ThemedText variant="footnote" tone="secondary">
+              {Math.round(word.score)}
+              <ThemedText variant="caption" tone="tertiary">
+                {' /100'}
+              </ThemedText>
             </ThemedText>
-          </ThemedText>
-        ) : null}
+          ) : null}
+          <Pressable
+            onPress={onDismiss}
+            accessibilityRole="button"
+            accessibilityLabel="Close word details"
+            pressRetentionOffset={spacing.lg}
+            style={({ pressed }) => [
+              styles.close,
+              { backgroundColor: colors.fill, opacity: pressed ? 0.6 : 1 },
+            ]}>
+            <HugeiconsIcon
+              icon={Cancel01Icon}
+              size={spacing.xxl}
+              color={colors.foreground}
+            />
+          </Pressable>
+        </View>
       </View>
 
       <Syllables word={word} />
@@ -211,23 +230,37 @@ export function WordDetail({ word, audioUri }: WordDetailProps) {
           ) : null}
         </View>
       ) : null}
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    marginTop: spacing.lg,
-    padding: spacing.lg,
-    borderRadius: radius.lg,
-    borderCurve: 'continuous',
-    gap: spacing.sm,
+  content: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xxl,
+    gap: spacing.md,
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
+  },
+  word: {
+    flexShrink: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  close: {
+    width: spacing.xxxxl,
+    height: spacing.xxxxl,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   syllables: {
     flexDirection: 'row',
@@ -245,6 +278,7 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
     marginTop: spacing.xs,
   },
@@ -252,8 +286,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    height: ACTION_HEIGHT,
-    paddingHorizontal: spacing.md,
+    minHeight: spacing.xxxxl,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
     borderRadius: radius.full,
   },
 });

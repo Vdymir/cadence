@@ -139,6 +139,13 @@ export default function ResultsScreen() {
     dismissToHome();
   }, []);
 
+  const handleSelectWord = useCallback((wordIndex: number) => {
+    router.push({
+      pathname: '/session/word-detail',
+      params: { wordIndex: String(wordIndex) },
+    });
+  }, []);
+
   if (!result) return null;
 
   return (
@@ -188,7 +195,7 @@ export default function ResultsScreen() {
             <WordBreakdown
               words={result.words}
               source={result.source}
-              audioUri={result.audioUri}
+              onSelectWord={handleSelectWord}
             />
           )}
         </View>

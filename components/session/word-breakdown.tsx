@@ -1,8 +1,7 @@
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
-import { WordDetail } from '@/components/session/word-detail';
 import { ThemedText } from '@/components/ui';
 import { radius, spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -17,8 +16,8 @@ export type WordBreakdownProps = {
    * claim, so it is required rather than defaulted.
    */
   source: 'azure' | 'live';
-  /** The session recording, for playing back a single word. */
-  audioUri: string | null;
+  /** Opens the native detail sheet for this result-word index. */
+  onSelectWord: (index: number) => void;
 };
 
 /**
@@ -73,9 +72,8 @@ const LEGEND: { status: WordVerdict; label: string }[] = [
  * word". And the per-word score, which the pipeline has always carried, was
  * never shown anywhere, along with the entire phoneme tier behind it.
  */
-export function WordBreakdown({ words, source, audioUri }: WordBreakdownProps) {
+export function WordBreakdown({ words, source, onSelectWord }: WordBreakdownProps) {
   const { colors } = useTheme();
-  const [selected, setSelected] = useState<number | null>(null);
 
   const colorFor = (status: WordVerdict) => {
     switch (status) {
@@ -92,7 +90,6 @@ export function WordBreakdown({ words, source, audioUri }: WordBreakdownProps) {
 
   const tappable = useMemo(() => words.map(hasDetail), [words]);
   const anyTappable = useMemo(() => tappable.some(Boolean), [tappable]);
-  const selectedWord = selected != null ? words[selected] : null;
   const { read, total, clear } = useMemo(() => coverage(words), [words]);
 
   // The live fallback has no pronunciation signal at all: its only verdicts are
@@ -144,7 +141,6 @@ export function WordBreakdown({ words, source, audioUri }: WordBreakdownProps) {
       <ThemedText variant="body" weight="medium" style={styles.passage}>
         {words.map((w, i) => {
           const isTappable = tappable[i];
-          const isSelected = selected === i;
           return (
             <Fragment key={i}>
               <Text
@@ -152,7 +148,7 @@ export function WordBreakdown({ words, source, audioUri }: WordBreakdownProps) {
                   isTappable
                     ? () => {
                         Haptics.selectionAsync();
-                        setSelected((current) => (current === i ? null : i));
+                        onSelectWord(i);
                       }
                     : undefined
                 }
@@ -172,7 +168,6 @@ export function WordBreakdown({ words, source, audioUri }: WordBreakdownProps) {
                   // A dotted underline marks "there is more here" without
                   // competing with the verdict colors for attention.
                   textDecorationStyle: w.status === 'omitted' ? 'solid' : 'dotted',
-                  backgroundColor: isSelected ? colors.fillStrong : 'transparent',
                 }}>
                 {w.word}
               </Text>
@@ -181,8 +176,6 @@ export function WordBreakdown({ words, source, audioUri }: WordBreakdownProps) {
           );
         })}
       </ThemedText>
-
-      {selectedWord ? <WordDetail word={selectedWord} audioUri={audioUri} /> : null}
     </View>
   );
 }
