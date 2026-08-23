@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ScoreChart, type ScoreChartPoint } from '@/components/analytics/score-chart';
@@ -21,6 +22,14 @@ export type SpeakingScoreCardProps = {
   note?: string;
 };
 
+/** The bucket's practice line, e.g. "2 sessions · 14 min". Partial coverage is
+ * left to the lighter bar and the footnote: a third line here would grow the
+ * header and shift the chart under the finger. */
+function activity(point: ScoreChartPoint): string | null {
+  if (point.sessions === 0) return null;
+  return `${point.sessions} ${point.sessions === 1 ? 'session' : 'sessions'} · ${point.minutes} min`;
+}
+
 /**
  * The hero: one speaking score, its band, its window change, and the bucketed
  * scores behind it.
@@ -28,8 +37,11 @@ export type SpeakingScoreCardProps = {
  * The chart plots the same window the score is computed from, so the number,
  * the dashed average line, and the bars can never disagree — and it's the same
  * window Home's card reads, so the two screens always show the same figure.
- * The bars themselves are TanStack Charts (see `ScoreChart`): tapping a bar
- * pins a tooltip with that bucket's date, exact score, sessions, and minutes.
+ *
+ * Scrubbing the bars swaps this header to that bucket: the eyebrow becomes its
+ * date, the hero number its score, and the right column its band and practice.
+ * The value stays above the hand instead of under it, and both states are two
+ * lines per column so nothing moves while the finger drags.
  */
 export function SpeakingScoreCard({
   score,
@@ -39,6 +51,7 @@ export function SpeakingScoreCard({
   note,
 }: SpeakingScoreCardProps) {
   const { colors } = useTheme();
+  const [scrubbed, setScrubbed] = useState<ScoreChartPoint | null>(null);
 
   const footnote = [
     points.some((p) => p.score != null && p.skillCount < SKILL_ORDER.length)
@@ -49,35 +62,55 @@ export function SpeakingScoreCard({
     .filter(Boolean)
     .join(' ');
 
+  const shown = scrubbed ? scrubbed.score : score;
+  const meta = scrubbed ? activity(scrubbed) : null;
+
   return (
     <GlassSurface radius="xl" style={styles.card}>
       <View style={styles.head}>
         <View style={styles.headLeft}>
-          <ThemedText variant="eyebrow" tone="secondary">
-            SPEAKING SCORE
+          <ThemedText variant="eyebrow" tone="secondary" numberOfLines={1}>
+            {scrubbed ? scrubbed.detail.toUpperCase() : 'SPEAKING SCORE'}
           </ThemedText>
-          <ScoreValue value={score} size={52} maxSize={19} />
+          <ScoreValue value={shown} size={52} maxSize={19} />
         </View>
         <View style={styles.headRight}>
-          {delta != null && delta !== 0 && (
-            <View
-              style={[
-                styles.deltaPill,
-                { backgroundColor: delta > 0 ? colors.positiveBg : 'transparent' },
-              ]}>
-              <DeltaLabel delta={delta} suffix={deltaSuffix} />
-            </View>
+          {scrubbed ? (
+            <ThemedText variant="footnote" weight="semibold" tone="secondary" numberOfLines={1}>
+              {scrubbed.score != null
+                ? scoreBand(scrubbed.score)
+                : scrubbed.sessions > 0
+                  ? 'Practiced, not scored'
+                  : 'No practice'}
+            </ThemedText>
+          ) : (
+            <>
+              {delta != null && delta !== 0 && (
+                <View
+                  style={[
+                    styles.deltaPill,
+                    { backgroundColor: delta > 0 ? colors.positiveBg : 'transparent' },
+                  ]}>
+                  <DeltaLabel delta={delta} suffix={deltaSuffix} />
+                </View>
+              )}
+              {score != null && (
+                <ThemedText variant="footnote" weight="semibold" tone="secondary">
+                  {scoreBand(score)}
+                </ThemedText>
+              )}
+            </>
           )}
-          {score != null && (
-            <ThemedText variant="footnote" weight="semibold" tone="secondary">
-              {scoreBand(score)}
+          {meta && (
+            <ThemedText variant="caption" tone="tertiary" numberOfLines={1}>
+              {meta}
             </ThemedText>
           )}
         </View>
       </View>
 
       <View style={styles.chart}>
-        <ScoreChart points={points} avg={score} />
+        <ScoreChart points={points} avg={score} onScrub={setScrubbed} />
         {footnote.length > 0 && (
           <ThemedText variant="caption" weight="regular" tone="tertiary" style={styles.footnote}>
             {footnote}
@@ -103,10 +136,12 @@ const styles = StyleSheet.create({
   },
   headLeft: {
     gap: spacing.sm,
+    flexShrink: 1,
   },
   headRight: {
     alignItems: 'flex-end',
     gap: spacing.sm,
+    flexShrink: 0,
   },
   deltaPill: {
     paddingVertical: spacing.xs,
