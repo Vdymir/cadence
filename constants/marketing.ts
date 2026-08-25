@@ -19,9 +19,11 @@ export const marketing = {
     // SF Pro Rounded is a touch narrower than Paper's system-font preview.
     // This width preserves the artboard's intended three-line wrap.
     mobileHeroBody: 300,
-    mobilePrivacy: 320,
     mobileSectionBody: 340,
     mobileArtwork: 1014,
+    // Five cards plus their gaps land inside the 1200pt page on desktop.
+    screenshot: 216,
+    screenshotMobile: 232,
   },
   height: {
     nav: 88,
@@ -72,8 +74,6 @@ export const marketing = {
     heroActions: 24,
     heroActionsMobile: 16,
     heroButton: 12,
-    meta: 12,
-    metaMobile: 10,
     kicker: 8,
     section: 96,
     sectionMobile: 64,
@@ -84,9 +84,15 @@ export const marketing = {
     featureIcon: 20,
     featureIconMobile: 16,
     featureCopy: 8,
+    screenshots: 20,
+    screenshotsMobile: 16,
   },
   radius: {
     appIcon: 24,
+  },
+  screenshot: {
+    /** The 1260 x 2736 App Store frame the shots were exported at. */
+    aspect: 1260 / 2736,
   },
   borderWidth: 1,
   iconStrokeWidth: 1.5,
@@ -95,7 +101,9 @@ export const marketing = {
     pressed: 0.68,
   },
   artwork: {
-    fadeHeight: 190,
+    /** Share of the artwork's height the bottom fade covers, so the cutout's
+     * cropped wrist stays hidden at every breakpoint. 190 / 698 on desktop. */
+    fadeRatio: 0.272,
     fade:
       'linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.18) 28%, rgba(255,255,255,0.72) 70%, #FFFFFF 100%)',
   },

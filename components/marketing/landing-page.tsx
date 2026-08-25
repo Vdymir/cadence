@@ -2,7 +2,6 @@ import Analytics01Icon from '@hugeicons-pro/core-stroke-rounded/Analytics01Icon'
 import AnalyticsUpIcon from '@hugeicons-pro/core-stroke-rounded/AnalyticsUpIcon';
 import ArrowRight01Icon from '@hugeicons-pro/core-stroke-rounded/ArrowRight01Icon';
 import ArrowUpRight01Icon from '@hugeicons-pro/core-stroke-rounded/ArrowUpRight01Icon';
-import LockIcon from '@hugeicons-pro/core-stroke-rounded/LockIcon';
 import MenuTwoLineIcon from '@hugeicons-pro/core-stroke-rounded/MenuTwoLineIcon';
 import Mic01Icon from '@hugeicons-pro/core-stroke-rounded/Mic01Icon';
 import PlayIcon from '@hugeicons-pro/core-stroke-rounded/PlayIcon';
@@ -30,8 +29,40 @@ import { useTheme } from '@/hooks/use-theme';
 
 import { ClarityMark } from './clarity-mark';
 
+const SCREENSHOTS = [
+  {
+    source: require('@/assets/marketing/screenshots/screen-01.jpg'),
+    alt: 'Clarity following a passage word by word while it is read aloud',
+  },
+  {
+    source: require('@/assets/marketing/screenshots/screen-02.jpg'),
+    alt: 'A word breakdown marking which words were clear, unclear, skipped, or added',
+  },
+  {
+    source: require('@/assets/marketing/screenshots/screen-03.jpg'),
+    alt: 'The analytics tab showing a speaking score trend and per-skill scores',
+  },
+  {
+    source: require('@/assets/marketing/screenshots/screen-04.jpg'),
+    alt: 'The practice tab with recommended passages, one-minute drills, and freestyle',
+  },
+  {
+    source: require('@/assets/marketing/screenshots/screen-05.jpg'),
+    alt: 'The passage editor holding a speech pasted in by hand',
+  },
+] as const;
+
 const HERO_IMAGE = require('@/assets/marketing/clarity-hero-cutout.png');
-const HERO_IMAGE_URI = Asset.fromModule(HERO_IMAGE).uri;
+const HERO_ASSET = Asset.fromModule(HERO_IMAGE);
+const HERO_IMAGE_URI = HERO_ASSET.uri;
+
+// The cutout's wrist runs off the bottom of its own frame, and the bottom fade
+// is what hides that cut. Letterboxing lifts the image edge out from under the
+// fade, so the box tracks the file's ratio instead of the artboard's.
+const HERO_ASPECT =
+  HERO_ASSET.width && HERO_ASSET.height
+    ? HERO_ASSET.width / HERO_ASSET.height
+    : marketing.width.heroArtwork / marketing.height.artwork;
 
 const subscribeToHydration = () => () => {};
 const getClientHydrationSnapshot = () => true;
@@ -109,7 +140,7 @@ const NAV_ITEMS = [
   { label: 'Product', anchor: 'product' },
   { label: 'How it works', anchor: 'features' },
   { label: 'Progress', anchor: 'features' },
-  { label: 'Privacy', anchor: 'privacy' },
+  { label: 'Screens', anchor: 'screens' },
 ] as const;
 
 function scrollTo(anchor: string) {
@@ -305,7 +336,10 @@ function HeroArtwork({ desktop, width }: { desktop: boolean; width: number }) {
     ? marketing.height.artwork
     : marketing.height.artworkMobile;
   const artworkWidth = Math.min(width, referenceWidth);
-  const artworkHeight = referenceHeight * (artworkWidth / referenceWidth);
+  const artworkHeight = Math.min(
+    referenceHeight * (artworkWidth / referenceWidth),
+    artworkWidth / HERO_ASPECT,
+  );
   const artworkSize = { width: artworkWidth, height: artworkHeight };
 
   return (
@@ -316,7 +350,14 @@ function HeroArtwork({ desktop, width }: { desktop: boolean; width: number }) {
         resizeMode="contain"
         style={artworkSize}
       />
-      {desktop ? <View pointerEvents="none" style={[styles.artworkFade, webFadeStyle]} /> : null}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.artworkFade,
+          { height: artworkHeight * marketing.artwork.fadeRatio },
+          webFadeStyle,
+        ]}
+      />
     </View>
   );
 }
@@ -358,7 +399,7 @@ function Hero({ desktop, pageWidth }: { desktop: boolean; pageWidth: number }) {
               width: desktop ? Math.min(marketing.width.heroTitle, pageWidth) : pageWidth,
             },
           ]}>
-          {desktop ? 'Speak clearly.\nSound like yourself.' : 'Speak clearly.\nSound like\nyourself.'}
+          {'Speak clearly.\nSound like you.'}
         </ThemedText>
         <ThemedText
           variant={desktop ? 'marketingBody' : 'marketingHeroBodyMobile'}
@@ -399,28 +440,6 @@ function Hero({ desktop, pageWidth }: { desktop: boolean; pageWidth: number }) {
           mobile={!desktop}
           onPress={() => scrollTo('features')}
         />
-      </MarketingReveal>
-
-      <MarketingReveal
-        order={1}
-        nativeID="privacy"
-        style={[
-          styles.privacy,
-          !desktop && styles.privacyMobile,
-          !desktop && { width: Math.min(marketing.width.mobilePrivacy, pageWidth) },
-        ]}>
-        <HugeiconsIcon
-          icon={LockIcon}
-          size={marketing.size.metaIcon}
-          color={colors.marketingMuted}
-          strokeWidth={marketing.iconStrokeWidth}
-        />
-        <ThemedText
-          variant={desktop ? 'marketingMeta' : 'marketingMetaMobile'}
-          tone="marketingSecondary"
-          style={!desktop && styles.privacyCopyMobile}>
-          No account. No cloud history. Your practice stays on your device.
-        </ThemedText>
       </MarketingReveal>
 
       <MarketingReveal order={2} style={styles.artworkReveal}>
@@ -474,7 +493,6 @@ function Feature({
 }
 
 function Features({ desktop, pageWidth }: { desktop: boolean; pageWidth: number }) {
-  const { colors } = useTheme();
   const columnWidth = desktop
     ? (pageWidth - marketing.gap.featureColumns) / 2
     : pageWidth;
@@ -482,11 +500,7 @@ function Features({ desktop, pageWidth }: { desktop: boolean; pageWidth: number 
   return (
     <View
       nativeID="features"
-      style={[
-        styles.features,
-        { borderColor: colors.marketingLine, width: pageWidth },
-        !desktop && styles.featuresMobile,
-      ]}>
+      style={[styles.features, { width: pageWidth }, !desktop && styles.featuresMobile]}>
       <View style={[styles.featuresHeading, { width: pageWidth }]}>
         <ThemedText
           variant={desktop ? 'marketingEyebrow' : 'marketingEyebrowMobile'}
@@ -546,6 +560,57 @@ function Features({ desktop, pageWidth }: { desktop: boolean; pageWidth: number 
   );
 }
 
+function Screens({
+  desktop,
+  pageWidth,
+  viewportWidth,
+}: {
+  desktop: boolean;
+  pageWidth: number;
+  viewportWidth: number;
+}) {
+  const { colors } = useTheme();
+  const cardWidth = desktop ? marketing.width.screenshot : marketing.width.screenshotMobile;
+  const cardSize = {
+    height: Math.round(cardWidth / marketing.screenshot.aspect),
+    width: cardWidth,
+  };
+  // The row scrolls, so it runs to the viewport edge instead of stopping at the
+  // page gutter. Clipping a card against the gutter reads as a broken layout;
+  // clipping it against the screen reads as "there is more, keep scrolling".
+  const rowWidth = desktop ? pageWidth : viewportWidth;
+  const edgeInset = Math.max((viewportWidth - pageWidth) / 2, 0);
+
+  return (
+    <View
+      nativeID="screens"
+      style={[styles.screens, { width: rowWidth }, !desktop && styles.screensMobile]}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ width: rowWidth }}
+        contentContainerStyle={[
+          styles.screenshotRow,
+          !desktop && styles.screenshotRowMobile,
+          !desktop && { paddingHorizontal: edgeInset },
+        ]}>
+        {SCREENSHOTS.map((screenshot) => (
+          <View
+            key={screenshot.alt}
+            style={[styles.screenshot, cardSize, { borderColor: colors.marketingLine }]}>
+            <Image
+              accessibilityLabel={screenshot.alt}
+              source={screenshot.source}
+              resizeMode="cover"
+              style={cardSize}
+            />
+          </View>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
 export function MarketingLandingPage() {
   const { colors } = useTheme();
   const { width: viewportWidth } = useWindowDimensions();
@@ -571,7 +636,7 @@ export function MarketingLandingPage() {
   return (
     <>
       <Head>
-        <title>Clarity — Speak clearly. Sound like yourself.</title>
+        <title>Clarity: Speak clearly. Sound like you.</title>
         <meta
           name="description"
           content="Clarity follows every word while you practice and shows you what to work on next."
@@ -586,6 +651,7 @@ export function MarketingLandingPage() {
           <Navigation desktop={desktop} pageWidth={pageWidth} />
           <Hero desktop={desktop} pageWidth={pageWidth} />
           <Features desktop={desktop} pageWidth={pageWidth} />
+          <Screens desktop={desktop} pageWidth={pageWidth} viewportWidth={width} />
         </ScrollView>
       ) : (
         <View style={[styles.page, { backgroundColor: colors.marketingCanvas }]} />
@@ -752,19 +818,6 @@ const styles = StyleSheet.create({
   heroActionDisabled: {
     opacity: marketing.opacity.disabled,
   },
-  privacy: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: marketing.gap.meta,
-  },
-  privacyMobile: {
-    alignItems: 'flex-start',
-    gap: marketing.gap.metaMobile,
-    justifyContent: 'center',
-  },
-  privacyCopyMobile: {
-    flex: 1,
-  },
   artwork: {
     alignItems: 'center',
     justifyContent: 'flex-end',
@@ -777,14 +830,12 @@ const styles = StyleSheet.create({
   },
   artworkFade: {
     bottom: 0,
-    height: marketing.artwork.fadeHeight,
     left: 0,
     position: 'absolute',
     right: 0,
   },
   features: {
     alignItems: 'center',
-    borderBottomWidth: marketing.borderWidth,
     gap: marketing.gap.section,
     paddingBottom: marketing.inset.section,
     paddingTop: marketing.inset.section,
@@ -824,6 +875,31 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: marketing.gap.featureCopy,
     minWidth: 0,
+  },
+  screens: {
+    alignItems: 'center',
+    paddingBottom: marketing.inset.section,
+    paddingTop: marketing.inset.section,
+  },
+  screensMobile: {
+    paddingBottom: marketing.inset.sectionMobile,
+    paddingTop: marketing.inset.sectionMobile,
+  },
+  screenshotRow: {
+    gap: marketing.gap.screenshots,
+    // The row scrolls whenever the cards outgrow the page, so it centers only
+    // while they still fit.
+    justifyContent: 'center',
+    minWidth: '100%',
+  },
+  screenshotRowMobile: {
+    gap: marketing.gap.screenshotsMobile,
+  },
+  screenshot: {
+    borderCurve: 'continuous',
+    borderRadius: radius.lg,
+    borderWidth: marketing.borderWidth,
+    overflow: 'hidden',
   },
   pressed: {
     opacity: marketing.opacity.pressed,
