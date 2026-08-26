@@ -9,6 +9,7 @@
  * agrees about which day it is.
  */
 
+import { DEFAULT_GOAL_MINUTES } from '@/constants/goals';
 import { SKILL_ORDER } from '@/constants/metrics';
 import { FILLER_BIGRAMS, FILLER_UNIGRAMS } from '@/lib/fillers';
 import {
@@ -29,7 +30,9 @@ import type {
   WordStat,
 } from '@/types/history';
 
-export const DAILY_GOAL_MINUTES = 20;
+/** The goal a user has when they never picked one. The real value is a setting
+ * (`Settings.goalMinutes`); callers pass it in so this module stays pure. */
+export const DAILY_GOAL_MINUTES = DEFAULT_GOAL_MINUTES;
 
 const DAY_MS = 86_400_000;
 
@@ -135,18 +138,26 @@ export function minutesOnDay(records: readonly SessionRecord[], dayMs: number): 
   return total;
 }
 
-/** Today's goal completion, 0–1. */
-export function todayProgress(records: readonly SessionRecord[], now: number): number {
-  return Math.min(minutesOnDay(records, now) / DAILY_GOAL_MINUTES, 1);
+/** Today's goal completion, 0–1, against `goalMinutes`. */
+export function todayProgress(
+  records: readonly SessionRecord[],
+  now: number,
+  goalMinutes: number = DAILY_GOAL_MINUTES,
+): number {
+  return Math.min(minutesOnDay(records, now) / goalMinutes, 1);
 }
 
 /** Goal-met flags for the 5 days before today, oldest first — exactly the
  * shape WeeklyProgress's `history` prop expects. */
-export function weeklyHistory(records: readonly SessionRecord[], now: number): boolean[] {
+export function weeklyHistory(
+  records: readonly SessionRecord[],
+  now: number,
+  goalMinutes: number = DAILY_GOAL_MINUTES,
+): boolean[] {
   const byDay = minutesByDay(records);
   const out: boolean[] = [];
   for (let i = 5; i >= 1; i--) {
-    out.push((byDay.get(dayKeyOffset(now, -i)) ?? 0) >= DAILY_GOAL_MINUTES);
+    out.push((byDay.get(dayKeyOffset(now, -i)) ?? 0) >= goalMinutes);
   }
   return out;
 }

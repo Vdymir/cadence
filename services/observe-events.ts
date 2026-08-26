@@ -67,6 +67,14 @@ export function setSubscriptionTier(tier: 'pro' | 'free' | 'unknown') {
   setGlobal('subscription_tier', tier);
 }
 
+/**
+ * Whether a Clerk session is active. Set by the auth bridge whenever Clerk
+ * settles, so sign-in funnel metrics and everything after can be split by it.
+ */
+export function setAuthState(state: 'signed-in' | 'signed-out') {
+  setGlobal('auth_state', state);
+}
+
 // ---- practice lifecycle -----------------------------------------------------
 
 /**

@@ -61,7 +61,19 @@
           "speechRecognitionPermission": "Allow $(PRODUCT_NAME) to use speech recognition to follow along as you read."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "expo-secure-store",
+      "expo-apple-authentication",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "17.0"
+          }
+        }
+      ],
+      "@clerk/expo",
+      "@clerk/expo-google-signin"
     ],
     "experiments": {
       "typedRoutes": true

@@ -4,6 +4,7 @@
  */
 
 import { ACCENTS, accentFor, hasPhonemeDetail } from '@/constants/accents';
+import { DEFAULT_GOAL_MINUTES, GOAL_OPTIONS } from '@/constants/goals';
 import { createMemoryKv } from '@/lib/history-store';
 import { createSettingsStore, DEFAULT_SETTINGS } from '@/lib/settings-store';
 
@@ -154,6 +155,7 @@ section('reset');
   const store = createSettingsStore(kv);
   store.set('accentLocale', 'en-CA');
   store.set('improveClarity', false);
+  store.set('displayName', 'Someone');
   store.reset();
   assertEq(store.getSettings(), DEFAULT_SETTINGS, 'reset restores defaults');
   assertEq(
@@ -161,6 +163,119 @@ section('reset');
     DEFAULT_SETTINGS,
     'and clears the stored keys, so a reload agrees',
   );
+}
+
+// ---------------------------------------------------------------------------
+section('onboarding fields');
+{
+  const kv = createMemoryKv();
+  const store = createSettingsStore(kv);
+  assertEq(store.getSettings().displayName, '', 'name defaults empty');
+  assertEq(store.getSettings().goalMinutes, DEFAULT_GOAL_MINUTES, 'goal defaults to the old constant');
+  assertEq(store.getSettings().prioritySkill, null, 'priority defaults to null');
+  assertEq(store.getSettings().onboardingCompletedAt, null, 'onboarding starts incomplete');
+
+  assert(store.set('displayName', 'Nate'), 'name write ok');
+  assert(store.set('goalMinutes', 5), 'goal write ok');
+  assert(store.set('prioritySkill', 'pace'), 'priority write ok');
+  assert(store.set('onboardingCompletedAt', 1_700_000_000_000), 'completion write ok');
+  const reloaded = createSettingsStore(kv);
+  assertEq(reloaded.getSettings().displayName, 'Nate', 'name survives reload');
+  assertEq(reloaded.getSettings().goalMinutes, 5, 'goal survives reload');
+  assertEq(reloaded.getSettings().prioritySkill, 'pace', 'priority survives reload');
+  assertEq(reloaded.getSettings().onboardingCompletedAt, 1_700_000_000_000, 'completion survives reload');
+
+  // null round-trips: stored as an absent key, read back as null, and the
+  // verify step must agree or the write reports failure.
+  assert(reloaded.set('prioritySkill', null), 'clearing priority reports success');
+  assertEq(reloaded.getSettings().prioritySkill, null, 'priority cleared');
+  assertEq(createSettingsStore(kv).getSettings().prioritySkill, null, 'and stays cleared on reload');
+  assert(reloaded.set('onboardingCompletedAt', null), 'clearing completion reports success');
+  assertEq(createSettingsStore(kv).getSettings().onboardingCompletedAt, null, 'completion cleared on reload');
+}
+
+// ---------------------------------------------------------------------------
+section('corrupt onboarding values fall back');
+{
+  const kv = createMemoryKv();
+  kv.set('set/goalMinutes', 7); // not an offered option
+  kv.set('set/prioritySkill', 'charisma');
+  kv.set('set/onboardingCompletedAt', -5);
+  const store = createSettingsStore(kv);
+  assertEq(store.getSettings().goalMinutes, DEFAULT_GOAL_MINUTES, 'unknown goal falls back');
+  assertEq(store.getSettings().prioritySkill, null, 'unknown skill falls back to null');
+  assertEq(store.getSettings().onboardingCompletedAt, null, 'negative stamp is not a completion');
+  assert(GOAL_OPTIONS.some((o) => o.minutes === DEFAULT_GOAL_MINUTES), 'the default is an offered option');
+}
+
+// ---------------------------------------------------------------------------
+section('write stamps and remote application');
+{
+  const kv = createMemoryKv();
+  let clock = 1000;
+  const store = createSettingsStore(kv, { now: () => clock });
+  assertEq(store.getUpdatedAt('accentLocale'), 0, 'never-written field stamps as 0');
+  store.set('accentLocale', 'en-GB');
+  assertEq(store.getUpdatedAt('accentLocale'), 1000, 'write records the clock');
+
+  let notified = 0;
+  store.subscribe(() => notified++);
+
+  // Server is newer: it wins and the stamp becomes the server's.
+  assert(store.applyRemote({ accentLocale: 'en-AU' }, { accentLocale: 2000 }), 'newer remote applied');
+  assertEq(store.getSettings().accentLocale, 'en-AU', 'remote value landed');
+  assertEq(store.getUpdatedAt('accentLocale'), 2000, 'stamp is the server time');
+  assertEq(notified, 1, 'one notification');
+
+  // Local is newer: remote is ignored for that field only.
+  clock = 3000;
+  store.set('goalMinutes', 10);
+  const changed = store.applyRemote(
+    { goalMinutes: 30, displayName: 'Remote' },
+    { goalMinutes: 2500, displayName: 2500 },
+  );
+  assert(changed, 'the newer field still applies');
+  assertEq(store.getSettings().goalMinutes, 10, 'local newer goal kept');
+  assertEq(store.getSettings().displayName, 'Remote', 'remote name applied');
+
+  // Identical remote: no identity churn, no notification.
+  const before = store.getSettings();
+  const n = notified;
+  assertEq(store.applyRemote({ displayName: 'Remote' }, { displayName: 9000 }), false, 'identical remote is a no-op');
+  assert(store.getSettings() === before, 'identity unchanged');
+  assertEq(notified, n, 'no notification');
+
+  // A fresh install (all stamps 0) always takes the server, including a tie at 0.
+  const fresh = createSettingsStore(createMemoryKv(), { now: () => 5 });
+  assert(fresh.applyRemote({ prioritySkill: 'fillers' }, { prioritySkill: 0 }), 'fresh install takes remote');
+  assertEq(fresh.getSettings().prioritySkill, 'fillers', 'remote priority landed');
+}
+
+// ---------------------------------------------------------------------------
+section('confirming an unchanged value stamps it');
+{
+  const kv = createMemoryKv();
+  let clock = 1000;
+  const store = createSettingsStore(kv, { now: () => clock });
+  const before = store.getSettings();
+  let notified = 0;
+  store.subscribe(() => notified++);
+
+  // What the onboarding goal step does when nobody taps: Continue confirms the
+  // preselected default.
+  clock = 4000;
+  assert(store.set('goalMinutes', before.goalMinutes), 'confirming the default reports success');
+  assertEq(store.getUpdatedAt('goalMinutes'), 4000, 'the confirmation is stamped');
+  assert(store.getSettings() === before, 'the snapshot keeps its identity');
+  assertEq(notified, 1, 'the sync layer is notified');
+
+  // The stamp is the whole point: without it an older server value wins.
+  assertEq(
+    store.applyRemote({ goalMinutes: 30 }, { goalMinutes: 3000 }),
+    false,
+    'an older remote loses to a confirmed default',
+  );
+  assertEq(store.getSettings().goalMinutes, before.goalMinutes, 'the confirmed value stands');
 }
 
 // ---------------------------------------------------------------------------

@@ -9,7 +9,7 @@ import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, V
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PACKAGE_TYPE, type PurchasesPackage } from 'react-native-purchases';
 
-import { GlassSurface, PrimaryButton, ThemedText } from '@/components/ui';
+import { OptionCard, PrimaryButton, ThemedText } from '@/components/ui';
 import { radius, spacing } from '@/constants/theme';
 import { useMarkInteractive } from '@/hooks/use-mark-interactive';
 import { useSubscription } from '@/hooks/use-subscription';
@@ -105,25 +105,7 @@ function PlanCard({
   const perMonth = isAnnual ? plan.product.pricePerMonthString : null;
 
   return (
-    <Pressable
-      accessibilityRole="radio"
-      accessibilityState={{ selected }}
-      onPress={() => {
-        Haptics.selectionAsync();
-        onSelect();
-      }}
-      style={({ pressed }) => [styles.planCard, pressed && styles.planPressed]}>
-      {/* Absolute sibling, not ancestor: the card's own content stays free to
-          hold other native views without nesting glass. The selection border
-          lives on the glass so it hugs the same continuous corners. */}
-      <GlassSurface
-        radius="lg"
-        interactive
-        style={[
-          StyleSheet.absoluteFill,
-          selected && { borderWidth: 2, borderColor: colors.accent },
-        ]}
-      />
+    <OptionCard selected={selected} onSelect={onSelect} style={styles.planCard}>
       <View style={styles.planRow}>
         {selected ? (
           <HugeiconsIcon icon={CheckmarkCircle02Icon} size={26} color={colors.accent} />
@@ -149,7 +131,7 @@ function PlanCard({
           </ThemedText>
         </View>
       </View>
-    </Pressable>
+    </OptionCard>
   );
 }
 
@@ -349,7 +331,7 @@ export default function PaywallScreen() {
         accessibilityRole="button"
         onPress={restorePurchase}
         disabled={busy}
-        style={({ pressed }) => [styles.textButton, pressed && styles.planPressed]}>
+        style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}>
         <ThemedText variant="subhead" tone="secondary">
           Restore purchase
         </ThemedText>
@@ -456,9 +438,6 @@ const styles = StyleSheet.create({
     minHeight: 72,
     justifyContent: 'center',
   },
-  planPressed: {
-    opacity: 0.85,
-  },
   planRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -489,6 +468,9 @@ const styles = StyleSheet.create({
   },
   cta: {
     marginTop: spacing.xxl,
+  },
+  pressed: {
+    opacity: 0.85,
   },
   textButton: {
     alignSelf: 'center',
