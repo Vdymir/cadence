@@ -7,11 +7,12 @@
 # agent-fix.yml as before.
 #
 # Three jobs, so the pipeline reads as three nodes in the workflow graph:
-#   triage — agent (.agents/triage-prompt.md): fetch feedback via
+#   triage — short git-ref mutex + agent (.agents/triage-prompt.md): fetch feedback via
 #            `eas testflight:feedback` (ASC key comes from the EAS
 #            credentials service), dedupe against existing issues, QUEUE
 #            each new actionable report as an issue labeled
-#            `testflight-queued`. Never blocks, never asks a human.
+#            `testflight-queued`. The mutex closes the event/sweep dedupe race.
+#            Never asks a human.
 #   claim  — scripts/testflight-drain.sh claim: EAS has no run queueing,
 #            so concurrent event runs race. An atomic git-ref lock
 #            (refs/heads/agent-fix-lock, stolen after 3h if stale)
@@ -23,7 +24,7 @@
 #   fix    — skipped unless claim output an issue. Runs the fix agent
 #            (.agents/fix-prompt.md, unchanged): repro on an EAS
 #            Simulator -> minimal fix -> verification build -> second
-#            simulator session -> PR with videos. Releases the lock, then
+#            simulator session -> PR with issue-appropriate evidence. Releases the lock, then
 #            dispatches a sweep run if the queue still has work (the
 #            chain). On agent failure: labels the issue `needs-human` and
 #            still releases + chains.
@@ -80,10 +81,7 @@ jobs:
           # --dangerously-skip-permissions: same rationale as agent-fix.yml
           # (allowlist patterns reject commands expanding GITHUB_TOKEN).
           # Safe here: ephemeral single-purpose VM with scoped secrets.
-          claude -p "$(cat .agents/triage-prompt.md)" \
-            --dangerously-skip-permissions \
-            --max-turns 60 \
-            --output-format json
+          bash scripts/testflight-drain.sh triage
 
   claim:
     name: Claim the oldest queued issue

@@ -13,7 +13,17 @@ import { useMarkInteractive } from '@/hooks/use-mark-interactive';
 import { useSetting } from '@/hooks/use-settings';
 import { useTheme } from '@/hooks/use-theme';
 
-type PermissionState = 'checking' | 'undetermined' | 'granted' | 'blocked' | 'restricted';
+type PermissionState =
+  | 'checking'
+  | 'undetermined'
+  | 'granted'
+  | 'blocked'
+  | 'restricted'
+  | 'simulated';
+
+const SIMULATED_SPEECH =
+  process.env.EXPO_PUBLIC_AUTOMATION === '1' &&
+  process.env.EXPO_PUBLIC_MOCK_PRACTICE === '1';
 
 const ROWS: { icon: IconSvgElement; text: string }[] = [
   { icon: Mic01Icon, text: 'Microphone, so Clarity can hear you read.' },
@@ -36,11 +46,17 @@ export default function MicrophoneStep() {
   useMarkInteractive();
   const { colors } = useTheme();
   const [, setCompletedAt] = useSetting('onboardingCompletedAt');
-  const [state, setState] = useState<PermissionState>('checking');
+  const [state, setState] = useState<PermissionState>(
+    SIMULATED_SPEECH ? 'simulated' : 'checking',
+  );
   const [available, setAvailable] = useState(true);
   const [writeFailed, setWriteFailed] = useState(false);
 
   useEffect(() => {
+    // The simulator QA build never touches the native recognizer. Asking for a
+    // permission it cannot use would put a system dialog back in front of the
+    // deterministic practice fixture this profile exists to exercise.
+    if (SIMULATED_SPEECH) return;
     let alive = true;
     (async () => {
       try {
@@ -77,7 +93,7 @@ export default function MicrophoneStep() {
   };
 
   const cta =
-    state === 'granted'
+    state === 'granted' || state === 'simulated'
       ? { title: 'Start practicing', action: finish }
       : state === 'blocked'
         ? { title: 'Open Settings', action: () => Linking.openSettings() }
@@ -87,7 +103,9 @@ export default function MicrophoneStep() {
 
   const note = writeFailed
     ? 'Clarity could not finish setting up on this device. Tap again to retry.'
-    : !available
+    : state === 'simulated'
+      ? 'This simulator build uses scripted speech, so it does not need microphone access.'
+      : !available
       ? 'Speech recognition is not available on this device. Simulators usually lack it. Try a physical device.'
       : state === 'blocked'
         ? 'Clarity cannot score a reading without the microphone. Turn it on in Settings whenever you are ready.'
@@ -125,11 +143,13 @@ export default function MicrophoneStep() {
             </ThemedText>
           </View>
         ))}
-        {state === 'granted' ? (
+        {state === 'granted' || state === 'simulated' ? (
           <View style={styles.row}>
             <HugeiconsIcon icon={Tick02Icon} size={24} color={colors.accent} />
             <ThemedText variant="bodyProse" style={styles.rowText}>
-              Microphone and speech recognition are on.
+              {state === 'simulated'
+                ? 'Scripted speech is ready for simulator testing.'
+                : 'Microphone and speech recognition are on.'}
             </ThemedText>
           </View>
         ) : null}

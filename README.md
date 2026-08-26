@@ -19,7 +19,8 @@ progress over time.
 - **Analytics** — score trend by week, month, or all time, along with practice
   time, session count, streak, and the words you keep stumbling on.
 
-All history is stored on the device. There is no account and no server database.
+History renders from on-device stores first and syncs to Convex after Clerk
+authenticates the account, so returning users still get an offline first frame.
 
 ## Stack
 
@@ -41,9 +42,10 @@ cp .env.example .env.local   # then fill in the keys
 bunx expo run:ios            # or: bunx expo run:android
 ```
 
-The iOS Simulator has no speech recognition. Use a real device to test a full
-session, or set `EXPO_PUBLIC_MOCK_PRACTICE=1` to run the UI against a fake
-session engine.
+The iOS Simulator has no reliable speech input. Use a real device for audio
+behavior, or set `EXPO_PUBLIC_MOCK_PRACTICE=1` to run passage and freestyle UI
+against deterministic scripted sessions. The EAS `simulator` profile enables
+that automatically.
 
 ### Environment
 
@@ -53,6 +55,9 @@ session engine.
 | `AI_COACH_MODEL`                  | No       | Defaults to `google/gemini-3.5-flash-lite`      |
 | `EXPO_PUBLIC_AZURE_SPEECH_KEY`    | No       | Word-level pronunciation scoring                |
 | `EXPO_PUBLIC_AZURE_SPEECH_REGION` | No       | Azure region for the key above                  |
+| `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` | Yes    | Clerk development or production publishable key |
+| `EXPO_PUBLIC_CONVEX_URL`          | Yes      | Matching Convex deployment URL                   |
+| `EXPO_PUBLIC_DEV_SIGNIN_EMAIL`    | QA       | Existing `+clerk_test` user for simulator auth   |
 | `APP_VARIANT`                     | Local    | `development`, `preview`, or `production`       |
 | `HUGEICONS_TOKEN`                 | Install  | Needed to install the Hugeicons Pro packages    |
 

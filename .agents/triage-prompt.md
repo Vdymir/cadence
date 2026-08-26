@@ -59,20 +59,34 @@ API errors you could not work around).
    `gh issue list --state all --search`). If the triggering submission's ID
    already appears in an issue, comment one line on that issue ("another
    report: <id>") and skip it. Drop any other already-filed items.
+   Treat a feedback ID as a primary key inside this run too: it may belong to
+   only one cluster and may appear in only one issue body. Immediately before
+   each `gh issue create`, repeat the all-state search for every ID in that
+   cluster. The workflow serializes triage runs, but this final check protects
+   reruns and manually invoked agents as well.
 3. **Cluster and rank.** Group the remaining new reports that describe the
    same symptom: one cluster, one issue. Rank clusters:
    - Crash beats complaint.
    - More reports beat fewer.
    - Reports against the newest build beat reports against old builds.
-4. **Classify reproducibility.** The fix agent drives an EAS Simulator with
-   NO microphone. Anything that requires real speech input (recording,
-   live transcription, pronunciation playback quality) cannot be
-   auto-fixed. Classify each cluster:
-   - `drivable`: library, passage editor, analytics, history, settings,
-     navigation, crashes with a clear non-speech trigger. These get
+4. **Classify reproducibility.** The fix agent's EAS Simulator build has
+   deterministic scripted passage and freestyle sessions, so it can reach live
+   session controls and every results screen without a microphone. Classify
+   each cluster:
+   - `drivable`: static or interactive UI on any screen (including recording
+     and results), navigation, state handling, history, settings, data display,
+     and crashes with a simulator-reachable trigger. These get
      `testflight-queued`.
-   - `needs-speech`: file with label `needs-human` instead, and say why
-     in the body. Never queue these.
+   - `needs-real-audio`: microphone routing, permission behavior, transcription
+     or pronunciation accuracy, captured-audio quality, and physical-device
+     playback. File these with `needs-human` and explain why the scripted
+     fixture cannot prove the claim. Never queue them.
+   - `needs-production-runtime`: Apple/Google provider-sheet behavior,
+     production Clerk configuration, TestFlight-only state, and Expo Updates
+     download/apply/rollback/error-recovery behavior. The QA build deliberately
+     uses a dev-user control and disables Updates, so it cannot prove these
+     claims. File them with `needs-human` unless the report includes a separate,
+     simulator-reachable trigger.
 5. **File the issues.** On an event run, file the triggering submission's
    cluster. On a sweep run, file up to THREE new clusters, best-ranked
    first; log anything you left unfiled (the next sweep picks it up).
@@ -86,6 +100,11 @@ API errors you could not work around).
      trace, inline in a code block.
    - For screenshot feedback: the screenshot URL, plus a one-paragraph
      text description of what the screenshot shows (the URL expires).
+   - Add `Evidence needed: screenshot`, `Evidence needed: session recording`,
+     or `Evidence needed: structural/runtime`. Choose screenshot for a stable
+     visual claim, session recording for motion/pressed-state/gesture/timing,
+     and structural/runtime for route, data, log, or logic claims. Use one by
+     default; list two only when the report makes two independent claims.
    - A `Source: TestFlight` line and the footer
      `TestFlight-Feedback-IDs: <id>, <id>, ...` listing every submission
      in the cluster. This footer is the dedupe contract. Never omit it.

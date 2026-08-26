@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# The TestFlight fix queue, serialized by a lock. Two subcommands, one per
-# workflow job, so the queue shows as separate nodes in the EAS workflow
+# The TestFlight pipeline, serialized by short triage and long fix locks. Three
+# subcommands, one per workflow stage, so the queue shows as separate nodes in
+# the EAS workflow
 # graph (testflight-autofix.yml / testflight-sweep.yml):
 #
+#   triage — acquire a short-lived lock, then run the feedback triage agent.
+#            Event and sweep runs overlap, so this prevents two agents from
+#            filing the same TestFlight submission before either issue is
+#            searchable on GitHub.
 #   claim — acquire the lock and claim the oldest `testflight-queued`
 #           issue. Emits `set-output issue_number <n>` (empty when the
 #           queue is empty or another run holds the lock). Holds the lock
@@ -17,15 +22,18 @@
 # its creation time; locks older than STALE_HOURS are stolen — that is
 # the recovery path when a fix job's VM dies while holding it.
 #
-# Env: GITHUB_TOKEN (req). fix also needs CLAUDE_CODE_OAUTH_TOKEN (via
-# claude), EXPO_TOKEN (chain dispatch), ISSUE_NUMBER, and node_modules
-# installed. WORKFLOW_URL is optional, for the lock message and comments.
-# Expects `gh`, `node`, `npx` on PATH; `claude` for fix.
+# Env: GITHUB_TOKEN (req). triage/fix also need CLAUDE_CODE_OAUTH_TOKEN (via
+# claude); fix needs EXPO_TOKEN (chain dispatch), ISSUE_NUMBER, and
+# node_modules installed. WORKFLOW_URL is optional, for lock messages and
+# comments. Expects `gh`, `node`, `npx`, and `claude` on PATH.
 set -euo pipefail
 
 REPO="SchroederNathan/clarity"
 LOCK_REF="agent-fix-lock"
 STALE_HOURS=3
+TRIAGE_LOCK_REF="testflight-triage-lock"
+TRIAGE_STALE_MINUTES=30
+TRIAGE_LOCK_SHA=""
 export GH_TOKEN="${GITHUB_TOKEN:?GITHUB_TOKEN is required}"
 
 api() { gh api "$@"; }
@@ -42,18 +50,24 @@ lock_age_hours() { # $1 = lock commit sha
   node -e 'console.log(Math.floor((Date.now() - Date.parse(process.argv[1])) / 3600000))' "$created"
 }
 
+lock_age_minutes() { # $1 = lock commit sha
+  local created
+  created=$(api "repos/$REPO/git/commits/$1" --jq .committer.date)
+  node -e 'console.log(Math.floor((Date.now() - Date.parse(process.argv[1])) / 60000))' "$created"
+}
+
 make_lock_commit() {
-  local head_sha tree_sha
+  local purpose="${1:-agent-fix}" head_sha tree_sha
   head_sha=$(api "repos/$REPO/git/ref/heads/main" --jq .object.sha)
   tree_sha=$(api "repos/$REPO/git/commits/$head_sha" --jq .tree.sha)
   api "repos/$REPO/git/commits" \
-    -f message="agent-fix lock: ${WORKFLOW_URL:-manual run}" \
+    -f message="$purpose lock: ${WORKFLOW_URL:-manual run}" \
     -f tree="$tree_sha" -f "parents[]=$head_sha" --jq .sha
 }
 
 acquire_lock() {
   local lock_sha cur age
-  lock_sha=$(make_lock_commit)
+  lock_sha=$(make_lock_commit agent-fix)
   if api "repos/$REPO/git/refs" -f ref="refs/heads/$LOCK_REF" -f sha="$lock_sha" >/dev/null 2>&1; then
     return 0
   fi
@@ -67,6 +81,29 @@ acquire_lock() {
   return 1
 }
 
+acquire_triage_lock() {
+  local lock_sha cur age
+  if [ -z "$TRIAGE_LOCK_SHA" ]; then
+    TRIAGE_LOCK_SHA=$(make_lock_commit testflight-triage)
+  fi
+  lock_sha="$TRIAGE_LOCK_SHA"
+  if api "repos/$REPO/git/refs" -f ref="refs/heads/$TRIAGE_LOCK_REF" -f sha="$lock_sha" >/dev/null 2>&1; then
+    return 0
+  fi
+  cur=$(api "repos/$REPO/git/ref/heads/$TRIAGE_LOCK_REF" --jq .object.sha 2>/dev/null) || return 1
+  age=$(lock_age_minutes "$cur")
+  if [ "$age" -ge "$TRIAGE_STALE_MINUTES" ]; then
+    echo "▸ Stealing stale triage lock (${age}m old)"
+    api -X DELETE "repos/$REPO/git/refs/heads/$TRIAGE_LOCK_REF" >/dev/null 2>&1 || true
+    api "repos/$REPO/git/refs" -f ref="refs/heads/$TRIAGE_LOCK_REF" -f sha="$lock_sha" >/dev/null 2>&1 && return 0
+  fi
+  return 1
+}
+
+release_triage_lock() {
+  api -X DELETE "repos/$REPO/git/refs/heads/$TRIAGE_LOCK_REF" >/dev/null 2>&1 || true
+}
+
 release_lock() {
   api -X DELETE "repos/$REPO/git/refs/heads/$LOCK_REF" >/dev/null 2>&1 || true
 }
@@ -74,6 +111,33 @@ release_lock() {
 oldest_queued() {
   gh issue list --repo "$REPO" --label testflight-queued --state open \
     --json number --jq '[.[].number] | min // empty'
+}
+
+cmd_triage() {
+  local attempt acquired=0 status=0
+  # Feedback event and sweep runs can land together. Wait without starting a
+  # second model; the first agent is normally finished well inside this window.
+  for attempt in $(seq 1 90); do
+    if acquire_triage_lock; then
+      acquired=1
+      break
+    fi
+    echo "▸ Another run is triaging feedback; waiting (${attempt}/90)"
+    sleep 10
+  done
+  if [ "$acquired" -ne 1 ]; then
+    echo "▸ Timed out waiting for the TestFlight triage lock" >&2
+    return 1
+  fi
+
+  trap release_triage_lock EXIT
+  claude -p "$(cat .agents/triage-prompt.md)" \
+    --dangerously-skip-permissions \
+    --max-turns 60 \
+    --output-format json || status=$?
+  release_triage_lock
+  trap - EXIT
+  return "$status"
 }
 
 cmd_claim() {
@@ -123,7 +187,8 @@ cmd_fix() {
 }
 
 case "${1:-}" in
+  triage) cmd_triage ;;
   claim) cmd_claim ;;
   fix) cmd_fix ;;
-  *) echo "usage: $0 claim|fix" >&2; exit 1 ;;
+  *) echo "usage: $0 triage|claim|fix" >&2; exit 1 ;;
 esac

@@ -4,10 +4,10 @@
 # the `repro` label to a GitHub issue. One headless Claude Code agent, in one
 # job on a default Linux worker, does the whole loop:
 #
-#   read the issue → reproduce it on an EAS Simulator (with screenshots)
+#   read the issue → classify evidence → reproduce on an EAS Simulator
 #   → comment the repro evidence on the issue → write the minimal fix
 #   → rebuild → verify the fix on a second EAS Simulator session
-#   → open a PR with before/after screenshots and both session video links
+#   → open a PR with screenshots, replay links, or runtime proof as appropriate
 #
 # A human reviews and merges; the agent never merges.
 #

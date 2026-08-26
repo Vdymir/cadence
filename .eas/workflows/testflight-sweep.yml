@@ -43,10 +43,7 @@ jobs:
           # --dangerously-skip-permissions: same rationale as agent-fix.yml
           # (allowlist patterns reject commands expanding GITHUB_TOKEN).
           # Safe here: ephemeral single-purpose VM with scoped secrets.
-          claude -p "$(cat .agents/triage-prompt.md)" \
-            --dangerously-skip-permissions \
-            --max-turns 60 \
-            --output-format json
+          bash scripts/testflight-drain.sh triage
 
   claim:
     name: Claim the oldest queued issue

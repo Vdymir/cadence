@@ -11,12 +11,11 @@ import { importHistory, type ImportSummary } from '@/services/session-history';
 /**
  * Deterministic demo-data seed, reachable at `<scheme>://dev-seed`.
  *
- * Exists for automated QA: simulators have no speech recognizer, so a real
- * practice session can never run on one, and every history-driven surface
- * (analytics, streaks, words to master) stays empty. An agent driving a
- * simulator build deep-links here once and gets 45 days of believable
- * history. Idempotent — the generated ids are a pure function of the seed,
- * so re-visiting merges zero duplicates.
+ * Exists for automated QA: scripted sessions make new results reachable on a
+ * simulator, but building enough history for analytics would still take many
+ * runs. An agent deep-links here once and gets 45 days of believable history.
+ * Idempotent — the generated ids are a pure function of the seed, so
+ * re-visiting merges zero duplicates.
  *
  * Compiled to a refusal unless the build sets EXPO_PUBLIC_SEED_HOOKS=1,
  * which only the `simulator` build profile does.

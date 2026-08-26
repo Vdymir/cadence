@@ -6,7 +6,8 @@ Two entry points, one fix loop:
   crash or screenshot feedback and one EAS Workflows run carries it all
   the way to a PR — triage the feedback into a GitHub issue, reproduce it
   on an [EAS Simulator](https://docs.expo.dev/), fix, verify on a second
-  simulator session, open a PR with screenshots and both session videos.
+  simulator session, and open a PR with the smallest evidence that proves
+  the claim.
 - **Manual** ("tag an issue, get a fix"): label any GitHub issue `repro`
   and the same fix loop runs via agent-fix.yml.
 
@@ -22,12 +23,13 @@ TestFlight tester submits crash/screenshot feedback
    │  for manual/testing; split files because EAS rejects
    │  ${{ app_store_connect.* }} env on non-ASC triggers
    │
-   │  job 1 `triage` — agent (.agents/triage-prompt.md):
+   │  job 1 `triage` — short mutex + agent (.agents/triage-prompt.md):
    │    fetch via `eas testflight:feedback`, dedupe by the
    │    TestFlight-Feedback-IDs footer, cluster + rank, QUEUE each
    │    new actionable report as an issue labeled `testflight-queued`
-   │    (speech-dependent reports get `needs-human` instead — the
-   │    simulator has no microphone). Triage never blocks.
+   │    (real-audio reports get `needs-human`; recording/results UI is
+   │    drivable through scripted speech). Concurrent triage waits on
+   │    the short lock instead of starting a duplicate model.
    │
    │  job 2 `claim` — scripts/testflight-drain.sh claim (fast, no
    │    node_modules): EAS can't queue runs, so concurrent event
@@ -47,15 +49,17 @@ fix loop — .agents/fix-prompt.md (also reachable via: human labels
    │        → .github/workflows/agent-repro-dispatch.yml
    │        → agent-fix.yml — this path bypasses the queue and lock)
    │ 1. read the issue
-   │ 2. EAS Simulator session: install latest simulator build, repro, screenshots
-   │ 3. issue comment: steps + observations + ▶ session video link
-   │ 4. minimal fix per AGENTS.md + `bun run test`
-   │ 5. eas build --profile simulator (fix build)
-   │ 6. second EAS Simulator session: verify the fix, screenshots
+   │ 2. choose evidence: screenshot, session replay, or structural/runtime proof
+   │ 3. EAS Simulator session: sign in as the dev test user and reproduce
+   │ 4. issue comment: steps + observations + selected evidence class
+   │ 5. minimal fix per AGENTS.md + `bun run test`
+   │ 6. eas build --profile simulator (fix build)
+   │ 7. second EAS Simulator session: verify with matching evidence
    ▼
 PR labeled `agent-fix`
-   Fixes #N · root cause · before/after screenshots
-   ▶ repro video · ▶ verified-fix video
+   Fixes #N · root cause · evidence class · verification
+   static UI: before/after images · motion/timing: replay links
+   structural/runtime: assertion, log, or regression test
 ```
 
 The device work uses `eas simulator:*` + `agent-device` — plain shell
@@ -96,17 +100,42 @@ Autofix one-time setup, on top of the setup below:
      Issues, Contents, Pull requests (read/write).
    - `EXPO_TOKEN` — same robot token, for simulator sessions and the
      verification build.
-3. **Label**: `gh label create repro --color 1D76DB`.
-4. **Seed one simulator build** (the repro installs the latest finished
+3. **EAS `development` environment**: it must use the Clerk development
+   publishable key and matching Convex development deployment. Set
+   `EXPO_PUBLIC_DEV_SIGNIN_EMAIL` to an existing `+clerk_test` account. It is a
+   public test identifier; do not set `EXPO_PUBLIC_DEV_SIGNIN_PASSWORD` in EAS.
+   In that Clerk development instance, enable **Email verification code** for
+   sign-in. Verify it with
+   `clerk config pull --instance dev --keys auth_email`; `sign_in_strategies`
+   must contain `email_code`.
+4. **Label**: `gh label create repro --color 1D76DB`.
+5. **Seed one simulator build** (the repro installs the latest finished
    one): `eas build --platform ios --profile simulator`. Rebuild whenever
-   the bug you want reproduced lands on `main`.
-5. EAS Simulator must be enabled on the account
+   native/config inputs change or the baseline code on `main` changes. The
+   profile compiles scripted passage and freestyle speech, QA seed hooks, and
+   the dev-user sign-in into an otherwise release-style preview app.
+6. EAS Simulator must be enabled on the account
    (`npx --yes eas-cli@latest simulator:availability --json`).
 
 ## Constraints worth knowing
 
-- The cloud simulator has no microphone: issues needing real speech get a
-  partial repro (up to the recording screen) and no automated fix.
+- The cloud simulator has no real microphone. Scripted sessions make session
+  controls and results UI testable, but microphone routing, permissions,
+  transcription/scoring accuracy, and audio quality still need a physical
+  device.
+- Simulator auth uses Clerk's development-only fixed OTP for the configured
+  `+clerk_test` user. Email-code sign-in must be enabled on the Clerk development
+  instance. No password is stored in EAS or bundled in the app.
+- Event and sweep triage share a short git-ref mutex. This prevents concurrent
+  agents from filing the same TestFlight feedback ID twice before GitHub search
+  can observe the first issue.
+- Static UI gets before/after screenshots. Motion, pressed states, gestures,
+  timing, and crash sequences use the EAS session replay. Structural/runtime
+  fixes use snapshots, logs, and tests. The agent does not capture all three by
+  default.
+- The fix agent checks the latest simulator artifact's commit before starting a
+  session. It reuses a compatible build and creates a fresh baseline only when
+  relevant code or config changed, avoiding billable sessions on stale builds.
 - Screenshots render inline in the PR because the repo is public
   (raw.githubusercontent.com URLs from the fix branch).
 - The run takes ~25–40 minutes end to end; the fix-verification EAS build
@@ -118,9 +147,9 @@ Autofix one-time setup, on top of the setup below:
 2. File the issue as a user would: *"App crashes when I save a custom
    passage. I pasted my speech, tapped Save to Library, and the app died."*
 3. Add the `repro` label. That is the entire human action.
-4. Watch: ack comment → EAS run → repro session (video on expo.dev) →
+4. Watch: ack comment → EAS run → repro session →
    evidence comment on the issue → fix build → verification session →
-   `agent-fix` PR with screenshots and both video links.
+   `agent-fix` PR with the selected evidence.
 5. Manual dispatch, when a take needs a re-run:
    `eas workflow:run .eas/workflows/agent-fix.yml -F issue_number=<n>`
    Between takes: delete the agent comments, the `agent/fix-issue-<n>`

@@ -15,25 +15,38 @@ import { useMarkInteractive } from '@/hooks/use-mark-interactive';
 import { useTheme } from '@/hooks/use-theme';
 
 /**
- * A password account on the Clerk DEVELOPMENT instance, for exercising the
- * signed-in app on a simulator, where neither native sheet can complete
- * (Apple needs a signed-in Apple ID, Google needs the OAuth client wiring).
- * The password strategy stays on for the dev instance only.
+ * Two deliberately separate ways into the Clerk DEVELOPMENT instance:
  *
- * The credential is read from `.env.local`, which is not committed, and never
- * written in source: a password in the repo is a password in every clone and
- * in every bundle built from one. Unset either variable and the dev button
- * does not render, so a checkout without them has no password path at all.
- * The `__DEV__` guard is what keeps the inlined values out of release bundles.
+ * - Local debug builds can use the password kept in `.env.local`.
+ * - The static EAS Simulator build uses Clerk's public test-email convention
+ *   and fixed test OTP. It only activates in the simulator QA profile, with a
+ *   `pk_test_` key and a `+clerk_test` address. No password enters an EAS env
+ *   or the app bundle.
  */
-function devAccountFromEnv(): { emailAddress: string; password: string } | null {
-  const emailAddress = process.env.EXPO_PUBLIC_DEV_SIGNIN_EMAIL?.trim();
-  const password = process.env.EXPO_PUBLIC_DEV_SIGNIN_PASSWORD?.trim();
-  if (!emailAddress || !password) return null;
-  return { emailAddress, password };
-}
-
-const DEV_ACCOUNT = __DEV__ ? devAccountFromEnv() : null;
+const AUTOMATION_BUILD = process.env.EXPO_PUBLIC_AUTOMATION === '1';
+const CLERK_DEVELOPMENT_INSTANCE =
+  process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.startsWith('pk_test_') === true;
+const DEV_EMAIL = process.env.EXPO_PUBLIC_DEV_SIGNIN_EMAIL?.trim() || null;
+const DEV_PASSWORD = process.env.EXPO_PUBLIC_DEV_SIGNIN_PASSWORD?.trim() || null;
+const DEV_ACCOUNT =
+  __DEV__ && DEV_EMAIL && DEV_PASSWORD
+    ? { emailAddress: DEV_EMAIL, password: DEV_PASSWORD }
+    : null;
+const SIMULATOR_TEST_EMAIL =
+  AUTOMATION_BUILD &&
+  CLERK_DEVELOPMENT_INSTANCE &&
+  DEV_EMAIL != null &&
+  /\+clerk_test(?:_|@)/i.test(DEV_EMAIL)
+    ? DEV_EMAIL
+    : null;
+const SIMULATOR_AUTH_ERROR = !AUTOMATION_BUILD
+  ? null
+  : !CLERK_DEVELOPMENT_INSTANCE
+    ? 'Simulator sign-in needs the Clerk development environment.'
+    : !SIMULATOR_TEST_EMAIL
+      ? 'The simulator test user is not configured.'
+      : null;
+const CLERK_TEST_CODE = '424242';
 
 /** Cancelling a native sheet is not an error and gets no error UI. */
 const CANCEL_CODES = new Set(['ERR_REQUEST_CANCELED', 'SIGN_IN_CANCELLED', '-5']);
@@ -161,17 +174,25 @@ export default function SignInScreen() {
     run('google', startGoogleAuthenticationFlow);
   };
 
-  /**
-   * The custom-flow shape, unlike the native hooks: `password()` then
-   * `finalize()`, each returning `{ error }` rather than throwing.
-   */
+  /** Custom Clerk flow for the local password account or simulator test OTP. */
   const runDev = async () => {
-    if (!DEV_ACCOUNT || busy) return;
+    if ((!DEV_ACCOUNT && !SIMULATOR_TEST_EMAIL) || busy) return;
     setBusy(true);
     setFailure(null);
     try {
-      const { error } = await signIn.password(DEV_ACCOUNT);
-      if (error) throw error;
+      if (SIMULATOR_TEST_EMAIL) {
+        // Clerk development instances do not send mail for +clerk_test
+        // addresses; 424242 is their documented deterministic test code.
+        const sent = await signIn.emailCode.sendCode({
+          emailAddress: SIMULATOR_TEST_EMAIL,
+        });
+        if (sent.error) throw sent.error;
+        const verified = await signIn.emailCode.verifyCode({ code: CLERK_TEST_CODE });
+        if (verified.error) throw verified.error;
+      } else if (DEV_ACCOUNT) {
+        const attempted = await signIn.password(DEV_ACCOUNT);
+        if (attempted.error) throw attempted.error;
+      }
       if (signIn.status !== 'complete') throw new Error(`Sign-in status ${signIn.status}`);
       const finalized = await signIn.finalize();
       if (finalized.error) throw finalized.error;
@@ -209,6 +230,15 @@ export default function SignInScreen() {
             {failure}
           </ThemedText>
         ) : null}
+        {SIMULATOR_AUTH_ERROR ? (
+          <ThemedText
+            variant="footnote"
+            tone="secondary"
+            style={styles.failure}
+            testID="simulator-auth-config-error">
+            {SIMULATOR_AUTH_ERROR}
+          </ThemedText>
+        ) : null}
         {/* fade={false}: PrimaryButton renders a GlassView, which goes blank
             under an animated opacity. autoplay: this screen mounts after the
             splash, so the reveal must replay rather than skip. */}
@@ -230,14 +260,17 @@ export default function SignInScreen() {
             onPress={onGoogle}
           />
         </IntroReveal>
-        {DEV_ACCOUNT ? (
+        {SIMULATOR_TEST_EMAIL || DEV_ACCOUNT ? (
           <Pressable
             accessibilityRole="button"
             disabled={busy}
             onPress={runDev}
+            testID="dev-test-sign-in"
             style={({ pressed }) => [styles.textButton, { opacity: pressed || busy ? 0.6 : 1 }]}>
             <ThemedText variant="subhead" tone="tertiary">
-              Sign in as dev (development build only)
+              {SIMULATOR_TEST_EMAIL
+                ? 'Sign in as dev test user'
+                : 'Sign in as dev (development build only)'}
             </ThemedText>
           </Pressable>
         ) : null}
