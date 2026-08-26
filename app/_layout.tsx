@@ -8,6 +8,7 @@ import { useEffect, type ReactNode } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { ProgressiveBlur } from '@/components/glass-tabs';
+import { ObserveErrorFallback } from '@/components/observe-error-fallback';
 import { IntroRevealProvider, SplashOverlay } from '@/components/splash';
 import { fontAssets, fonts } from '@/constants/theme';
 import { useIntroReveal } from '@/hooks/use-intro-reveal';
@@ -169,6 +170,24 @@ function RootLayout() {
   );
 }
 
-// Measures Time to First Render (cold_ttr / warm_ttr) and hosts the router
-// integration that tags every later metric with its route.
-export default ObserveRoot.wrap(RootLayout);
+/**
+ * Measures Time to First Render (cold_ttr / warm_ttr), hosts the router
+ * integration that tags every later metric with its route, and mounts the
+ * render-error boundary at the very top of the tree.
+ *
+ * Written out rather than using `ObserveRoot.wrap`, which renders `ObserveRoot`
+ * with no props and so cannot pass `errorBoundaryFallback`. Mounting the
+ * boundary here rather than inside `RootLayout` puts it above every provider,
+ * so a throw while one of them renders is caught too.
+ *
+ * Render errors are the one class of failure Observe cannot see on its own:
+ * React never routes them through the `ErrorUtils` handler that `expo-observe`
+ * installs on import, and in a release build they take the app down.
+ */
+export default function ObservedRootLayout() {
+  return (
+    <ObserveRoot errorBoundaryFallback={ObserveErrorFallback}>
+      <RootLayout />
+    </ObserveRoot>
+  );
+}

@@ -19,8 +19,10 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { Observe } from 'expo-observe';
 
 import { NO_PRO_ACCESS, readProAccess, type ProAccess } from '@/lib/entitlements';
+import { setSubscriptionTier } from '@/services/observe-events';
 import {
   configurePurchases,
   describePurchasesError,
@@ -87,6 +89,9 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
         // the message surfaces on the account screen, and the listener still
         // corrects the state once the network recovers.
         console.warn('[purchases] initial customer info failed', cause);
+        // Recoverable here, but it is why a paying customer can open the app and
+        // find Pro switched off, so it must not stay a console warning.
+        Observe.reportError(cause);
         if (alive) setError(describePurchasesError(cause));
       })
       .finally(() => {
@@ -108,6 +113,7 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       }
     } catch (cause) {
       console.warn('[purchases] refresh failed', cause);
+      Observe.reportError(cause);
       setError(describePurchasesError(cause));
     }
   }, []);
@@ -138,6 +144,19 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
     }),
     [available, customerInfo, error, isLoading, refresh, restore, storeKind],
   );
+
+  /**
+   * Tags every subsequent EAS Observe metric and event with the tier, so the
+   * automatic startup and navigation timings can be read per tier too and not
+   * just the events we log ourselves.
+   *
+   * 'unknown' while the first customer-info read is outstanding, because a
+   * pending read and a genuine free account are the same `isPro: false` here and
+   * pooling them would quietly overstate the free tier.
+   */
+  useEffect(() => {
+    setSubscriptionTier(value.isLoading ? 'unknown' : value.access.isPro ? 'pro' : 'free');
+  }, [value.isLoading, value.access.isPro]);
 
   return <SubscriptionContext.Provider value={value}>{children}</SubscriptionContext.Provider>;
 }

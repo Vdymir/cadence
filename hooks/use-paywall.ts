@@ -17,12 +17,14 @@
  */
 
 import * as Haptics from 'expo-haptics';
+import { Observe } from 'expo-observe';
 import { useCallback } from 'react';
 import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
 import type { PurchasesOffering } from 'react-native-purchases';
 
 import { useSubscription } from '@/hooks/use-subscription';
 import { PRO_ENTITLEMENT_ID } from '@/lib/entitlements';
+import { paywallResolved, type PaywallSource } from '@/services/observe-events';
 import { describePurchasesError } from '@/services/purchases';
 
 export type PaywallOutcome =
@@ -57,11 +59,20 @@ function toOutcome(result: PAYWALL_RESULT): PaywallOutcome {
 export function usePaywall() {
   const { available, access, refresh } = useSubscription();
 
-  /** Pulls the entitlement forward after a paywall closes. The customer info
+  /**
+   * Pulls the entitlement forward after a paywall closes. The customer info
    * listener also fires, but awaiting this means a caller can branch on fresh
-   * state on the very next line. */
+   * state on the very next line.
+   *
+   * Every outcome passes through here, the failures included, so this is also
+   * where the paywall is reported to EAS Observe. The purchase path is the one
+   * flow the app cannot inspect after the fact: RevenueCat owns the screen, so
+   * without this event a paywall that never manages to present looks exactly
+   * like a customer who chose not to buy.
+   */
   const settle = useCallback(
-    async (outcome: PaywallOutcome) => {
+    async (source: PaywallSource, outcome: PaywallOutcome) => {
+      paywallResolved({ source, outcome });
       if (outcome === 'purchased' || outcome === 'restored') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         await refresh();
@@ -78,10 +89,12 @@ export function usePaywall() {
       if (!available) return 'error';
       try {
         const result = await RevenueCatUI.presentPaywall({ offering, displayCloseButton: true });
-        return settle(toOutcome(result));
+        return settle('explicit', toOutcome(result));
       } catch (cause) {
         console.warn('[purchases] paywall failed', describePurchasesError(cause), cause);
-        return 'error';
+        // `paywall.resolved` records that it could not present; this records why.
+        Observe.reportError(cause);
+        return settle('explicit', 'error');
       }
     },
     [available, settle],
@@ -97,10 +110,11 @@ export function usePaywall() {
           offering,
           displayCloseButton: true,
         });
-        return settle(toOutcome(result));
+        return settle('gate', toOutcome(result));
       } catch (cause) {
         console.warn('[purchases] paywall failed', describePurchasesError(cause), cause);
-        return 'error';
+        Observe.reportError(cause);
+        return settle('gate', 'error');
       }
     },
     [available, settle],
@@ -158,6 +172,9 @@ export function usePaywall() {
       });
     } catch (cause) {
       console.warn('[purchases] customer center failed', describePurchasesError(cause), cause);
+      // The only route to cancel or request a refund in-app, so a failure here
+      // ends in a support email rather than anything we would otherwise see.
+      Observe.reportError(cause);
     }
   }, [available, refresh]);
 

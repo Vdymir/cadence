@@ -7,11 +7,13 @@ import {
   withTiming,
 } from 'react-native-reanimated';
 import { File, Paths } from 'expo-file-system';
+import { Observe } from 'expo-observe';
 import {
   ExpoSpeechRecognitionModule,
   useSpeechRecognitionEvent,
 } from 'expo-speech-recognition';
 
+import { modeForId } from '@/lib/passage-catalog';
 import { tokenizePassage } from '@/lib/passage-text';
 import { PassageAligner } from '@/services/alignment';
 import { assessSession } from '@/services/azure-pronunciation';
@@ -20,6 +22,13 @@ import {
   selectBestHypothesis,
   withBorrowedTimings,
 } from '@/services/live-recognition';
+import {
+  audioProcessingFailed,
+  practiceFailed,
+  recognitionFallback,
+  scoringDegraded,
+  type ScoringDegradedReason,
+} from '@/services/observe-events';
 import { claimEngine, releaseEngine } from '@/services/recognition-owner';
 import { getAccentLocale } from '@/services/settings';
 import {
@@ -256,6 +265,9 @@ export function usePracticeSession(passage: Passage): PracticeSession {
       // recognizer may already be inactive
     }
     if (mounted.current) setError({ code, message });
+    // The error UI tells the user; this tells us. Which code dominates decides
+    // whether the fix is the permission ask, the device matrix, or the engine.
+    practiceFailed({ code, mode: modeForId(passage.id) });
     setStatusSafe('error');
   };
 
@@ -408,6 +420,7 @@ export function usePracticeSession(passage: Passage): PracticeSession {
         // Simulators often lack on-device model assets — retry network-based.
         m.retriedNetwork = true;
         m.mode = 'network';
+        recognitionFallback({ reason: event.error });
         return; // the trailing `end` event performs the restart
       }
       fail('recognition-unavailable', event.message || 'Speech recognition is unavailable on this device.');
@@ -437,6 +450,7 @@ export function usePracticeSession(passage: Passage): PracticeSession {
     if (m.mode === 'on-device' && !m.retriedNetwork && m.lastTransientError) {
       m.retriedNetwork = true;
       m.mode = 'network';
+      recognitionFallback({ reason: m.lastTransientError.code });
       m.lastTransientError = null;
       startRecognition(m.mode);
       return;
@@ -573,6 +587,11 @@ export function usePracticeSession(passage: Passage): PracticeSession {
       }
     } catch (e) {
       if (__DEV__) console.warn('[practice] audio processing failed:', e);
+      // Scores survive this, so nothing surfaces to the user: the attempt just
+      // silently loses playback and falls back to a meter-derived waveform. The
+      // event says how often; the reported error says which call threw.
+      audioProcessingFailed({ segments: m.segmentUris.length });
+      Observe.reportError(e);
       audioUri = null;
       waveform = null;
     }
@@ -598,7 +617,13 @@ export function usePracticeSession(passage: Passage): PracticeSession {
 
     const key = process.env.EXPO_PUBLIC_AZURE_SPEECH_KEY;
     const region = process.env.EXPO_PUBLIC_AZURE_SPEECH_REGION;
+    // Narrowed as we get further in. Every path that falls out of this block
+    // ends up scored by the live layer instead, which the user cannot tell apart
+    // from a real grade — so the one event below the block reports which of them
+    // it was rather than leaving the quiet paths silent.
+    let degraded: ScoringDegradedReason = 'azure-unconfigured';
     if (key && region) {
+      degraded = 'azure-failed';
       try {
         const chunks = buildChunks(
           tokenized,
@@ -606,7 +631,9 @@ export function usePracticeSession(passage: Passage): PracticeSession {
           segmentDurations,
           m.segmentActiveStartMs,
         ).filter((c) => segmentBytes[c.segmentIndex] != null);
-        if (chunks.length > 0) {
+        if (chunks.length === 0) {
+          degraded = 'azure-no-audio';
+        } else {
           const wavChunks = chunks.map((c) => ({
             wavBytes: sliceWav(segmentBytes[c.segmentIndex]!, c.startMs, c.endMs),
             referenceText: c.referenceText,
@@ -629,12 +656,17 @@ export function usePracticeSession(passage: Passage): PracticeSession {
             },
           });
           if (azure) return azure;
+          degraded = 'azure-unusable';
         }
       } catch (e) {
         if (__DEV__) console.warn('[practice] Azure assessment failed:', e);
+        // Paired with the 'azure-failed' event below, which counts the fallback
+        // without saying whether it was the network, the key, or a bad response.
+        Observe.reportError(e);
       }
     }
 
+    scoringDegraded({ reason: degraded, locale: getAccentLocale(), durationMs });
     return buildLiveFallbackResult(base);
   };
 
@@ -771,6 +803,12 @@ export function usePracticeSession(passage: Passage): PracticeSession {
         } catch (e) {
           // Absolute last resort — never dead-end.
           if (__DEV__) console.warn('[practice] processing failed entirely:', e);
+          Observe.reportError(e);
+          scoringDegraded({
+            reason: 'processing-failed',
+            locale: getAccentLocale(),
+            durationMs: Math.max(1, Math.round(m.accumulatedActiveMs)),
+          });
           finalResult = buildLiveFallbackResult({
             tokenized,
             statuses: m.aligner.refWordStatuses(),
