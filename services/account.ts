@@ -6,16 +6,22 @@
  *
  *  1. RevenueCat first, while the identified app-user id is still current
  *     (`services/purchases.ts` says: forget on logout, never at launch).
- *  2. Every account-scoped local store. Named clears, not `clearAll()`: the
- *     history store's `clearAll` drops the legacy-import guard on purpose, and
- *     on sign-out that guard is what stops this device's old `sessions.json`
- *     from being re-imported into a different account.
- *  3. Clerk last. Signing out flips the root guard, which unmounts the screen
- *     that called this, so nothing after it is guaranteed to run.
+ *  2. Clerk next, and a failure aborts here. The clear below is irreversible
+ *     and the caller offers a retry, so a sign-out that did not happen must
+ *     leave the account's data where it is: the alternative is a signed-in
+ *     user staring at an empty history.
+ *  3. Every account-scoped local store, last. Named clears, not `clearAll()`:
+ *     the history store's `clearAll` drops the legacy-import guard on purpose,
+ *     and on sign-out that guard is what stops this device's old
+ *     `sessions.json` from being re-imported into a different account.
+ *
+ * Signing out flips the root guard, so the screen that called this is already
+ * unmounted by the time step 3 runs. That is fine: this is a module function,
+ * and an unmounted caller does not cancel a pending promise chain.
  */
 
 import { forgetPurchaser } from '@/services/purchases';
-import { setLastSignedInUserId } from '@/services/auth-state';
+import { setIdentifiedPurchaserId, setLastSignedInUserId } from '@/services/auth-state';
 import { clearAccountHistory } from '@/services/session-history';
 import { resetSettings } from '@/services/settings';
 import { clearSyncState } from '@/services/sync-state';
@@ -31,6 +37,9 @@ export function clearAccountData() {
   // device would start its upload from another account's position.
   clearSyncState();
   setLastSignedInUserId(null);
+  // `signOutAndClear` forgets the purchaser on the way out, so the next
+  // sign-in on this device has to identify again.
+  setIdentifiedPurchaserId(null);
 }
 
 export async function signOutAndClear(signOut: SignOutFn): Promise<void> {
@@ -41,8 +50,8 @@ export async function signOutAndClear(signOut: SignOutFn): Promise<void> {
     // Not worth blocking the sign-out over.
     console.warn('[account] forgetPurchaser failed', error);
   }
-  clearAccountData();
   await signOut();
+  clearAccountData();
 }
 
 /**
@@ -51,6 +60,11 @@ export async function signOutAndClear(signOut: SignOutFn): Promise<void> {
  * `deleteRemote` removes the account's server-side data. It runs FIRST and a
  * failure aborts: deleting the Clerk user before the data would leave rows with
  * no owner left to delete them.
+ *
+ * The local clear is unconditional here, unlike sign-out. Sign-out holds the
+ * data back when Clerk refuses, because the account still exists and the user
+ * can retry. Once the Clerk user is deleted there is nothing left to retry
+ * into, so this device's copy goes whether or not the sign-out call answered.
  */
 export async function deleteAccount(
   deleteRemote: () => Promise<void>,
@@ -59,5 +73,9 @@ export async function deleteAccount(
 ): Promise<void> {
   await deleteRemote();
   await deleteUser();
-  await signOutAndClear(signOut);
+  try {
+    await signOutAndClear(signOut);
+  } finally {
+    clearAccountData();
+  }
 }

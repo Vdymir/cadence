@@ -20,6 +20,7 @@ import { WordsToMaster } from '@/components/words-to-master';
 import { PASSAGES } from '@/constants/passages';
 import { spacing, TAB_BAR_SCROLL_INSET } from '@/constants/theme';
 import { useMarkInteractive } from '@/hooks/use-mark-interactive';
+import { useSetting } from '@/hooks/use-settings';
 import { useSessionRecords, useDerivedStats, useWords } from '@/hooks/use-session-history';
 import { useNow } from '@/hooks/use-now';
 import { useSpeakingSummary } from '@/hooks/use-speaking-summary';
@@ -29,12 +30,23 @@ import { speakWord } from '@/services/word-pronunciation';
 
 /** Takes `now` from the shared clock so it refreshes on foreground instead of
  * being frozen at whatever hour the screen first mounted. */
-function greeting(now: number) {
+function timeOfDay(now: number) {
   const hour = new Date(now).getHours();
   if (hour < 5) return 'Good Evening';
   if (hour < 12) return 'Good Morning';
   if (hour < 17) return 'Good Afternoon';
   return 'Good Evening';
+}
+
+/**
+ * The name is what onboarding asks for first and what Settings edits, so it
+ * belongs on the one screen that greets. It is optional in both places, and it
+ * arrives from the account a moment after a sign-in on a new device, so the
+ * greeting has to read fine without it.
+ */
+function greeting(now: number, displayName: string) {
+  const name = displayName.trim();
+  return name.length > 0 ? `${timeOfDay(now)}, ${name}` : timeOfDay(now);
 }
 
 export default function HomeScreen() {
@@ -47,6 +59,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
 
   const now = useNow();
+  const [displayName] = useSetting('displayName');
   const stats = useDerivedStats();
   const records = useSessionRecords();
   // The same rolling-7-day figures Analytics leads with, so the two tabs can
@@ -130,7 +143,7 @@ export default function HomeScreen() {
             rather than pushing them off screen or truncating to "D…". */}
         <IntroReveal order={0} style={styles.greeting}>
           <ThemedText variant="largeTitle" numberOfLines={2}>
-            {greeting(now)}
+            {greeting(now, displayName)}
           </ThemedText>
         </IntroReveal>
         <IntroReveal order={0} fade={false}>

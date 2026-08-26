@@ -3,6 +3,7 @@ import { useConvexAuth, useMutation, useQuery } from 'convex/react';
 import { useEffect, useRef, useState } from 'react';
 
 import { api } from '@/convex/_generated/api';
+import { PASSAGE_PUSH_BATCH, PASSAGE_REMOVE_BATCH } from '@/convex/limits';
 import { EXPORT_KIND, EXPORT_VERSION, type HistoryExport } from '@/lib/history-schema';
 import {
   expandWordDeltas,
@@ -188,6 +189,12 @@ function SessionSync() {
 
 // --- passages ----------------------------------------------------------------
 
+function chunk<T>(items: readonly T[], size: number): T[][] {
+  const batches: T[][] = [];
+  for (let i = 0; i < items.length; i += size) batches.push(items.slice(i, i + size));
+  return batches;
+}
+
 function PassageSync() {
   const push = useMutation(api.passages.push);
   const remove = useMutation(api.passages.remove);
@@ -210,12 +217,17 @@ function PassageSync() {
         if (plan.addLocal.length > 0 || plan.removeLocal.length > 0) {
           applyRemotePassages(plan.addLocal, plan.removeLocal);
         }
-        if (plan.push.length > 0) {
-          await push({ passages: plan.push.map(toRemotePassage) });
+        // Both mutations cap their batch (see `convex/limits.ts`), so a
+        // library larger than one batch goes up in several calls rather than
+        // being refused whole.
+        for (const batch of chunk(plan.push, PASSAGE_PUSH_BATCH)) {
+          if (cancelled) return;
+          await push({ passages: batch.map(toRemotePassage) });
         }
         if (cancelled) return;
-        if (plan.removeRemote.length > 0) {
-          await remove({ clientIds: plan.removeRemote, at: Date.now() });
+        for (const batch of chunk(plan.removeRemote, PASSAGE_REMOVE_BATCH)) {
+          if (cancelled) return;
+          await remove({ clientIds: batch, at: Date.now() });
         }
         if (cancelled) return;
         // Every pending delete is either now on the server or was never there.

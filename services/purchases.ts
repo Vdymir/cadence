@@ -348,12 +348,14 @@ export async function refreshCustomerInfo(): Promise<CustomerInfo | null> {
 /**
  * Links purchases to a stable app-side user id.
  *
- * Unused today: Clarity has no accounts, so the SDK keeps an anonymous id per
- * install. These wrappers mark the two places that must change when sign-in
- * lands, because getting the order wrong is how subscriptions go missing.
- * Call `identifyPurchaser` right after login (RevenueCat transfers the
- * anonymous purchases onto the identified user) and `forgetPurchaser` on
- * logout, never on app launch.
+ * Both are driven by `components/auth-bridge.tsx`: `identifyPurchaser` right
+ * after login (RevenueCat transfers the anonymous purchases onto the identified
+ * user), `forgetPurchaser` on logout, never on app launch. Getting that order
+ * wrong is how subscriptions go missing.
+ *
+ * A null return means purchases are unavailable in this build, so NOTHING was
+ * linked. The caller must not record the identity on a null: it is the
+ * difference between a retry and an account left on the anonymous id.
  */
 export async function identifyPurchaser(appUserID: string): Promise<CustomerInfo | null> {
   if (!isConfigured()) return null;

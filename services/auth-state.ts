@@ -17,19 +17,48 @@ import { kv } from '@/services/kv';
 
 const KEY = 'auth/userId';
 
-export function getLastSignedInUserId(): string | null {
+/**
+ * The user id RevenueCat has actually accepted, which is NOT the same fact as
+ * the flag above.
+ *
+ * The sign-in flag has to be written the moment Clerk reports a user, because
+ * the next launch's first frame reads it. `Purchases.logIn` can fail, and did
+ * not use to leave a trace when it did: the bridge compared against the flag,
+ * found it already current, and skipped the identify for the rest of the
+ * install's life, leaving purchases on the anonymous id. This key records the
+ * call that succeeded, so a failure retries.
+ */
+const PURCHASER_KEY = 'auth/purchaserId';
+
+function readString(key: string): string | null {
   try {
-    return kv.getString(KEY) ?? null;
+    return kv.getString(key) ?? null;
   } catch {
     return null;
   }
 }
 
-export function setLastSignedInUserId(userId: string | null): void {
+function writeString(key: string, value: string | null, label: string): void {
   try {
-    if (userId) kv.set(KEY, userId);
-    else kv.remove(KEY);
+    if (value) kv.set(key, value);
+    else kv.remove(key);
   } catch (error) {
-    console.warn('[auth-state] could not persist sign-in flag', error);
+    console.warn(`[auth-state] could not persist ${label}`, error);
   }
+}
+
+export function getLastSignedInUserId(): string | null {
+  return readString(KEY);
+}
+
+export function setLastSignedInUserId(userId: string | null): void {
+  writeString(KEY, userId, 'sign-in flag');
+}
+
+export function getIdentifiedPurchaserId(): string | null {
+  return readString(PURCHASER_KEY);
+}
+
+export function setIdentifiedPurchaserId(userId: string | null): void {
+  writeString(PURCHASER_KEY, userId, 'purchaser id');
 }

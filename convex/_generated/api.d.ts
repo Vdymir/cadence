@@ -10,6 +10,7 @@
 
 import type * as account from "../account.js";
 import type * as lib from "../lib.js";
+import type * as limits from "../limits.js";
 import type * as passages from "../passages.js";
 import type * as sessions from "../sessions.js";
 import type * as settings from "../settings.js";
@@ -23,6 +24,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   account: typeof account;
   lib: typeof lib;
+  limits: typeof limits;
   passages: typeof passages;
   sessions: typeof sessions;
   settings: typeof settings;

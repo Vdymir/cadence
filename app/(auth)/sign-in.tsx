@@ -18,12 +18,22 @@ import { useTheme } from '@/hooks/use-theme';
  * A password account on the Clerk DEVELOPMENT instance, for exercising the
  * signed-in app on a simulator, where neither native sheet can complete
  * (Apple needs a signed-in Apple ID, Google needs the OAuth client wiring).
- * Compiled out of release builds by the `__DEV__` guards below; the password
- * strategy stays on for the dev instance only.
+ * The password strategy stays on for the dev instance only.
+ *
+ * The credential is read from `.env.local`, which is not committed, and never
+ * written in source: a password in the repo is a password in every clone and
+ * in every bundle built from one. Unset either variable and the dev button
+ * does not render, so a checkout without them has no password path at all.
+ * The `__DEV__` guard is what keeps the inlined values out of release bundles.
  */
-const DEV_ACCOUNT = __DEV__
-  ? { emailAddress: 'dev+clerk_test@example.com', password: 'dev-password' }
-  : null;
+function devAccountFromEnv(): { emailAddress: string; password: string } | null {
+  const emailAddress = process.env.EXPO_PUBLIC_DEV_SIGNIN_EMAIL?.trim();
+  const password = process.env.EXPO_PUBLIC_DEV_SIGNIN_PASSWORD?.trim();
+  if (!emailAddress || !password) return null;
+  return { emailAddress, password };
+}
+
+const DEV_ACCOUNT = __DEV__ ? devAccountFromEnv() : null;
 
 /** Cancelling a native sheet is not an error and gets no error UI. */
 const CANCEL_CODES = new Set(['ERR_REQUEST_CANCELED', 'SIGN_IN_CANCELLED', '-5']);
