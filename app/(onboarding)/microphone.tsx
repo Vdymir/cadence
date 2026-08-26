@@ -38,6 +38,7 @@ export default function MicrophoneStep() {
   const [, setCompletedAt] = useSetting('onboardingCompletedAt');
   const [state, setState] = useState<PermissionState>('checking');
   const [available, setAvailable] = useState(true);
+  const [writeFailed, setWriteFailed] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -55,7 +56,13 @@ export default function MicrophoneStep() {
     };
   }, []);
 
-  const finish = () => setCompletedAt(Date.now());
+  /**
+   * The last step, and the only one whose write is load-bearing: the root guard
+   * swaps this group for the tabs on `onboardingCompletedAt`, so nothing here
+   * navigates. A failed write therefore left the CTA looking dead with nothing
+   * said, and the note below is what says it. Pressing again retries.
+   */
+  const finish = () => setWriteFailed(!setCompletedAt(Date.now()));
 
   const request = async () => {
     try {
@@ -78,13 +85,15 @@ export default function MicrophoneStep() {
           ? { title: 'Continue', action: finish }
           : { title: 'Allow microphone access', action: request };
 
-  const note = !available
-    ? 'Speech recognition is not available on this device. Simulators usually lack it. Try a physical device.'
-    : state === 'blocked'
-      ? 'Clarity cannot score a reading without the microphone. Turn it on in Settings whenever you are ready.'
-      : state === 'restricted'
-        ? 'Speech recognition is turned off by a restriction on this device. A parent or an administrator controls it.'
-        : null;
+  const note = writeFailed
+    ? 'Clarity could not finish setting up on this device. Tap again to retry.'
+    : !available
+      ? 'Speech recognition is not available on this device. Simulators usually lack it. Try a physical device.'
+      : state === 'blocked'
+        ? 'Clarity cannot score a reading without the microphone. Turn it on in Settings whenever you are ready.'
+        : state === 'restricted'
+          ? 'Speech recognition is turned off by a restriction on this device. A parent or an administrator controls it.'
+          : null;
 
   const footer =
     state === 'undetermined' || state === 'blocked' ? (

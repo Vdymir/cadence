@@ -35,7 +35,14 @@ export default function PriorityStep() {
       title="What do you want to work on?"
       subtitle="Clarity starts you here. Once you have a few sessions, your own results take over."
       ctaTitle="Continue"
-      onContinue={() => router.push('/(onboarding)/microphone')}
+      onContinue={() => {
+        // "Not sure yet" stores null, which is also the untouched default, so
+        // only a stamped write tells the two apart for the sync layer. Nothing
+        // tapped is not an answer: the field stays unstamped so the account's
+        // own choice can still arrive from another device.
+        if (notSure || priority !== null) setWriteFailed(!setPriority(priority));
+        router.push('/(onboarding)/microphone');
+      }}
       note={writeFailed ? 'That choice could not be saved. Your device may be out of storage.' : null}>
       <View style={styles.list}>
         {SKILL_ORDER.map((key) => (

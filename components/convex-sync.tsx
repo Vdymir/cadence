@@ -34,7 +34,9 @@ import {
   getPendingPassageDeletes,
   getSessionsPulledAt,
   getSessionsPushedSeq,
+  isSyncSuspended,
   markSettingsResolved,
+  resumeSync,
   setSessionsPulledAt,
   setSessionsPushedSeq,
   settlePassageDeletes,
@@ -48,7 +50,14 @@ import type { Settings } from '@/types/settings';
 
 /** Matches `PUSH_BATCH` in `convex/sessions.ts`. */
 const SESSION_PUSH_BATCH = 50;
-const SESSION_PULL_PAGE = 200;
+/**
+ * Small on purpose. A session carries up to `WORD_DELTAS_MAX` per-word verdicts
+ * (2000, the store's own cap), which is roughly 80 KB of response for one row.
+ * A 200-row page of those is ~16 MB and blows Convex's read limit, and a query
+ * that exceeds it fails EVERY time it runs: the pull would never recover.
+ * 25 pages the same history in more, safely sized round trips.
+ */
+const SESSION_PULL_PAGE = 25;
 /**
  * How long a fresh install waits for the account's settings before falling
  * through to onboarding. Offline, the query never answers; the user must still
@@ -72,6 +81,28 @@ export function ConvexSync() {
   const { isAuthenticated } = useConvexAuth();
   useGateResolution();
   if (!isAuthenticated) return null;
+  return <AuthenticatedSync />;
+}
+
+/**
+ * The three sync effects, mounted only while Convex holds a session.
+ *
+ * Its MOUNT is what lifts the teardown latch (`services/sync-state.ts`). A
+ * sign-out or a deletion sets the latch, this subtree unmounts a beat later
+ * when Convex drops the session, and the next mount belongs to whoever signs
+ * in next. Lifting it on every render instead would undo the suspension the
+ * moment a Clerk state change re-rendered the tree, which is precisely what a
+ * teardown does.
+ *
+ * In render, not an effect: child effects run before a parent's, so an effect
+ * here would leave the children's first push looking at a stale latch.
+ */
+function AuthenticatedSync() {
+  const mounted = useRef(false);
+  if (!mounted.current) {
+    mounted.current = true;
+    resumeSync();
+  }
   return (
     <>
       <SessionSync />
@@ -109,7 +140,7 @@ function SessionSync() {
     let running = false;
 
     const run = async () => {
-      if (running) return;
+      if (running || isSyncSuspended()) return;
       running = true;
       try {
         for (;;) {
@@ -154,7 +185,7 @@ function SessionSync() {
   const page = useQuery(api.sessions.since, { after, limit: SESSION_PULL_PAGE });
 
   useEffect(() => {
-    if (!page || page.length === 0) return;
+    if (!page || page.length === 0 || isSyncSuspended()) return;
     const localIds = new Set(getRecords().map((record) => record.id));
     // Recorded here and folded at write time; folding again would double count.
     const fresh = page.filter((row) => !localIds.has(row.clientId));
@@ -171,8 +202,19 @@ function SessionSync() {
         words: [],
       };
       const summary = importHistory(JSON.stringify(envelope), 'merge');
-      if (!summary.ok) console.warn('[sync] session import rejected', summary.reason);
+      if (!summary.ok) {
+        // A rejected envelope imported NOTHING. Returning before the cursor
+        // moves retries this page later; folding its verdicts anyway would put
+        // word mastery permanently ahead of the sessions that explain it.
+        console.warn('[sync] session import rejected', summary.reason);
+        return;
+      }
+      // Only the rows the store kept. `parseRecord` can reject one row out of a
+      // valid envelope (`summary.failed`), and that row's verdicts have no
+      // session behind them.
+      const stored = new Set(getRecords().map((record) => record.id));
       for (const row of fresh) {
+        if (!stored.has(row.clientId)) continue;
         if (row.wordDeltas && row.wordDeltas.length > 0) {
           applyWordVerdicts(expandWordDeltas(row.wordDeltas), row.completedAt, row.endedReason);
         }
@@ -208,7 +250,7 @@ function PassageSync() {
 
     const run = async () => {
       const rows = remoteRef.current;
-      if (rows === undefined || running) return;
+      if (rows === undefined || running || isSyncSuspended()) return;
       running = true;
       try {
         const pending = getPendingPassageDeletes();
@@ -230,8 +272,12 @@ function PassageSync() {
           await remove({ clientIds: batch, at: Date.now() });
         }
         if (cancelled) return;
-        // Every pending delete is either now on the server or was never there.
-        if (pending.length > 0) settlePassageDeletes(pending);
+        // Only what the server has: the ids just patched, plus the ones its
+        // snapshot already showed deleted. A pending id merely MISSING from
+        // that snapshot stays pending, because the row may exist in a copy
+        // this run did not read.
+        const settled = [...plan.settle, ...plan.removeRemote];
+        if (settled.length > 0) settlePassageDeletes(settled);
       } catch (error) {
         console.warn('[sync] passage sync failed; will retry on the next change', error);
       } finally {
@@ -280,7 +326,7 @@ function SettingsSync() {
 
     const run = async () => {
       const doc = remoteRef.current;
-      if (doc === undefined || running) return;
+      if (doc === undefined || running || isSyncSuspended()) return;
       running = true;
       try {
         const local: Settings = getSettings();

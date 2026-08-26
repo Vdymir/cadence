@@ -115,7 +115,14 @@ export default function SignInScreen() {
     setFailure(null);
     try {
       const { createdSessionId, setActive } = await start();
-      if (createdSessionId && setActive) await setActive({ session: createdSessionId });
+      // A resolved flow with no session is not a success. Both native sheets
+      // THROW on cancel (see `isCancel`), so reaching here without one means
+      // the sign-in needs a step this screen does not offer. Left silent, the
+      // button simply looked dead.
+      if (!createdSessionId || !setActive) {
+        throw new Error(`${provider} sign-in completed without a session`);
+      }
+      await setActive({ session: createdSessionId });
     } catch (error) {
       if (!isCancel(error)) {
         Observe.reportError(error);

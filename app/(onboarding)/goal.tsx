@@ -21,7 +21,12 @@ export default function GoalStep() {
       title="How much do you want to practice?"
       subtitle="This sets your daily goal. You can change it any time in Settings."
       ctaTitle="Continue"
-      onContinue={() => router.push('/(onboarding)/priority')}
+      onContinue={() => {
+        // Confirms the preselected goal too. See the accent step for why an
+        // unchanged value still has to be written.
+        setWriteFailed(!setGoalMinutes(goalMinutes));
+        router.push('/(onboarding)/priority');
+      }}
       note={writeFailed ? 'That choice could not be saved. Your device may be out of storage.' : null}>
       <View style={styles.list}>
         {GOAL_OPTIONS.map((option) => (

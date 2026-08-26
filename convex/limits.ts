@@ -41,3 +41,26 @@ export const ARTWORK_STOPS_MAX = 4;
 
 /** "rgba(240,110,50,0.92)". */
 export const ARTWORK_COLOR_MAX = 64;
+
+/**
+ * Per-word verdicts per session. Mirrors `MAX_WORD_DELTAS` in
+ * `lib/history-store.ts`, which is where the device caps them.
+ *
+ * This one is not only about storage. `sessions.since` returns whole rows, so
+ * an unbounded delta array makes the PULL query's response unbounded too, and a
+ * query that exceeds Convex's read limit fails every single time it runs. See
+ * `SESSION_PULL_PAGE` in `components/convex-sync.tsx` for the other half.
+ */
+export const WORD_DELTAS_MAX = 2000;
+
+/** `lib/history-schema.ts` slices this to 5 on the way in. */
+export const CHALLENGING_WORDS_MAX = 16;
+
+/** One spoken word, plus room for a compound. */
+export const WORD_MAX = 64;
+
+/** Verdict codes are words like "mispronounced". */
+export const WORD_STATUS_MAX = 32;
+
+/** `passageId`, `topicId`, `contentTitle`, `appVersion`. */
+export const SESSION_LABEL_MAX = 200;

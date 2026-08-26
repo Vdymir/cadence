@@ -5,7 +5,7 @@ import { HugeiconsIcon } from '@hugeicons/react-native';
 import * as Haptics from 'expo-haptics';
 import { Observe } from 'expo-observe';
 import { router, Stack } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/ui';
@@ -120,6 +120,7 @@ export default function SettingsScreen() {
   const [prioritySkill, setPrioritySkill] = useSetting('prioritySkill');
   const [improveClarity, setImproveClarity] = useSetting('improveClarity');
   const [nameDraft, setNameDraft] = useState(displayName);
+  const [editingName, setEditingName] = useState(false);
   const [writeFailed, setWriteFailed] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -128,10 +129,30 @@ export default function SettingsScreen() {
     router.back();
   };
 
+  /**
+   * The draft follows the store whenever the field is not being edited.
+   *
+   * `displayName` is not settled when this screen mounts: the account's copy
+   * arrives from Convex a moment later. Without this the draft stayed at the
+   * mount-time value, and one focus-then-blur wrote that stale value (usually
+   * empty) straight over the synced name and pushed it to every device.
+   */
+  useEffect(() => {
+    if (!editingName) setNameDraft(displayName);
+  }, [displayName, editingName]);
+
   const commitName = () => {
     const trimmed = nameDraft.trim();
-    if (trimmed === displayName) return;
-    setWriteFailed(!setDisplayName(trimmed));
+    if (trimmed === displayName) {
+      setEditingName(false);
+      return;
+    }
+    const ok = setDisplayName(trimmed);
+    setWriteFailed(!ok);
+    // Editing stays open on a failure: the draft is the only copy of what they
+    // typed, and letting the effect above replace it with the value still
+    // stored would throw the text away under a note saying it was not saved.
+    setEditingName(!ok);
   };
 
   const choose = <T,>(current: T, next: T, write: (value: T) => boolean) => {
@@ -227,6 +248,7 @@ export default function SettingsScreen() {
               <TextInput
                 value={nameDraft}
                 onChangeText={setNameDraft}
+                onFocus={() => setEditingName(true)}
                 onBlur={commitName}
                 onSubmitEditing={commitName}
                 placeholder="Your first name"

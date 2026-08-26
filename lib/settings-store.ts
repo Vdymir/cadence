@@ -187,8 +187,21 @@ export function createSettingsStore(kv: KvBackend, deps: SettingsStoreDeps = {})
 
     set(key, value) {
       const current = hydrate();
-      if (current[key] === value) return true;
       try {
+        if (current[key] === value) {
+          // An unchanged value is still an answer. Onboarding PRESELECTS the
+          // default accent, goal, and priority, so Continue on an untouched
+          // step writes the value it already holds. Returning early left the
+          // stamp at 0, which `planSettings` reads as "never answered here" and
+          // lets the server's older value overwrite the confirmed one.
+          //
+          // Only the stamp moves, so the snapshot keeps its identity and no
+          // screen re-renders; the notification is for the sync layer, which
+          // pushes on the new stamp.
+          kv.set(stampKey(key), now());
+          emit();
+          return true;
+        }
         // Memory equals disk: confirm by reading back, not by assuming the
         // write landed.
         if (!writeVerified(key, value, now())) return false;

@@ -263,10 +263,18 @@ section('passage plan');
   const pending = planPassages([], [remoteOf(a)], ['custom-a']);
   assertEq(pending.removeRemote, ['custom-a'], 'pending delete reaches the server');
   assertEq(pending.addLocal, [], 'a pending delete is not resurrected locally');
+  assertEq(pending.settle, [], 'a delete the server has not recorded stays pending');
 
   // Pending delete of a row that was never uploaded, or already deleted there.
   const gone = planPassages([], [remoteOf(a, NOW)], ['custom-a', 'custom-never']);
   assertEq(gone.removeRemote, [], 'already-deleted and never-uploaded rows need nothing');
+  assertEq(gone.settle, ['custom-a'], 'a delete the server already carries is settled');
+
+  // The id is not in this snapshot at all. Absence is not proof: the row may
+  // exist in a copy this run did not read, so the delete must stay pending or a
+  // later pull brings the passage back.
+  const unseen = planPassages([], [], ['custom-never']);
+  assertEq(unseen.settle, [], 'a delete missing from the snapshot is never settled');
 
   // Deleted locally before it was pushed, but the local row is somehow still
   // present: do not push it back.

@@ -252,6 +252,33 @@ section('write stamps and remote application');
 }
 
 // ---------------------------------------------------------------------------
+section('confirming an unchanged value stamps it');
+{
+  const kv = createMemoryKv();
+  let clock = 1000;
+  const store = createSettingsStore(kv, { now: () => clock });
+  const before = store.getSettings();
+  let notified = 0;
+  store.subscribe(() => notified++);
+
+  // What the onboarding goal step does when nobody taps: Continue confirms the
+  // preselected default.
+  clock = 4000;
+  assert(store.set('goalMinutes', before.goalMinutes), 'confirming the default reports success');
+  assertEq(store.getUpdatedAt('goalMinutes'), 4000, 'the confirmation is stamped');
+  assert(store.getSettings() === before, 'the snapshot keeps its identity');
+  assertEq(notified, 1, 'the sync layer is notified');
+
+  // The stamp is the whole point: without it an older server value wins.
+  assertEq(
+    store.applyRemote({ goalMinutes: 30 }, { goalMinutes: 3000 }),
+    false,
+    'an older remote loses to a confirmed default',
+  );
+  assertEq(store.getSettings().goalMinutes, before.goalMinutes, 'the confirmed value stands');
+}
+
+// ---------------------------------------------------------------------------
 section('accent catalog');
 {
   assertEq(ACCENTS[0].locale, 'en-US', 'en-US is first and is the default');

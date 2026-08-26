@@ -39,7 +39,10 @@ const DURATION_MS = 450;
  */
 export function useIntroRevealStyle(order: number, dy = 14, fade = true, autoplay = false) {
   const revealed = use(IntroContext);
-  const skipped = autoplay ? false : useRef(revealed).current;
+  // Unconditional: the ref captures the FIRST render's value either way, and a
+  // hook behind a ternary is one prop change away from a hook-order crash.
+  const revealedOnMount = useRef(revealed).current;
+  const skipped = autoplay ? false : revealedOnMount;
   const progress = useSharedValue(skipped ? 1 : 0);
 
   useEffect(() => {

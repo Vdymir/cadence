@@ -139,6 +139,16 @@ export type PassagePlan = {
   addLocal: CustomPassage[];
   /** Server-deleted passages this device still shows. */
   removeLocal: string[];
+  /**
+   * Pending deletes the server has already recorded, so this device can stop
+   * carrying them.
+   *
+   * A pending id absent from `remote` is NOT here. Absence from one snapshot
+   * proves nothing: the row may exist and simply not be in the copy this run
+   * read. Settling on absence is what let a delete be forgotten and the
+   * passage come back on a later pull.
+   */
+  settle: string[];
 };
 
 export function planPassages(
@@ -149,7 +159,13 @@ export function planPassages(
   const remoteById = new Map(remote.map((row) => [row.clientId, row]));
   const localIds = new Set(local.map((p) => p.id));
   const pending = new Set(pendingDeletes);
-  const plan: PassagePlan = { push: [], removeRemote: [], addLocal: [], removeLocal: [] };
+  const plan: PassagePlan = {
+    push: [],
+    removeRemote: [],
+    addLocal: [],
+    removeLocal: [],
+    settle: [],
+  };
 
   for (const passage of local) {
     const row = remoteById.get(passage.id);
@@ -163,7 +179,12 @@ export function planPassages(
   }
 
   for (const row of remote) {
-    if (row.deletedAt !== undefined || localIds.has(row.clientId)) continue;
+    if (row.deletedAt !== undefined) {
+      // The server carries the delete now, so this device need not.
+      if (pending.has(row.clientId)) plan.settle.push(row.clientId);
+      continue;
+    }
+    if (localIds.has(row.clientId)) continue;
     if (pending.has(row.clientId)) {
       plan.removeRemote.push(row.clientId);
       continue;

@@ -25,7 +25,16 @@ export default function AccentStep() {
       title="Which accent do you speak?"
       subtitle="Your reading is scored against this accent. Picking the one you actually speak stops your own vowels being counted as mistakes."
       ctaTitle="Continue"
-      onContinue={() => router.push('/(onboarding)/goal')}
+      onContinue={() => {
+        // Continue confirms the accent, including the preselected one nobody
+        // tapped. `set` stamps an unchanged value for exactly this reason: an
+        // unstamped field reads as "never answered on this device" and the
+        // sync layer hands the account's older value back
+        // (`lib/settings-store.ts`). A lost write still does not trap anyone
+        // here; the note is for the tap path.
+        setWriteFailed(!setAccentLocale(accentLocale));
+        router.push('/(onboarding)/goal');
+      }}
       note={
         writeFailed
           ? 'That choice could not be saved. Your device may be out of storage.'

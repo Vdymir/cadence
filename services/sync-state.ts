@@ -67,12 +67,25 @@ function writePendingPassageDeletes(ids: string[]) {
   }
 }
 
+/**
+ * Cap on the pending list.
+ *
+ * A delete is settled only once the server confirms it (`plan.settle` in
+ * `lib/sync-plan.ts`), which means an id for a passage that never reached the
+ * server has nothing to confirm it and would sit here for the life of the
+ * install. The oldest entries go first: they are the ones most likely already
+ * reconciled, and the list has to stay bounded. A hand-written library never
+ * comes close to this many.
+ */
+const MAX_PENDING_DELETES = 200;
+
 /** Called by the passage store on every local delete, before the sync layer
  * has any chance to run. */
 export function notePassageDelete(id: string) {
   const current = getPendingPassageDeletes();
   if (current.includes(id)) return;
-  writePendingPassageDeletes([...current, id]);
+  const next = [...current, id];
+  writePendingPassageDeletes(next.slice(-MAX_PENDING_DELETES));
   emit();
 }
 
@@ -115,6 +128,44 @@ export function resetLocalStoresOnce(clear: () => void) {
       console.warn('[sync-state] could not write the reset guard', error);
     }
   }
+}
+
+// --- teardown latch (in-memory) ----------------------------------------------
+
+/**
+ * True from the first destructive step of a sign-out or an account deletion
+ * until a freshly authenticated sync layer mounts.
+ *
+ * Both exits are the same shape of race. Clearing the local stores emits to
+ * their listeners, and `components/convex-sync.tsx` subscribes to all three to
+ * decide what to push and pull; deleting the server rows updates the reactive
+ * queries the same effects read. Either way the effects are still mounted, so
+ * without this latch a teardown feeds itself: the cleared stores get refilled
+ * from the last server snapshot, or the emptied tables get refilled from the
+ * local stores. The account's data comes back, and on sign-out it comes back
+ * for whoever signs in next.
+ *
+ * Lifted ONLY by a fresh mount of the authenticated sync subtree, never by a
+ * re-render, because a re-render is exactly what a Clerk state change during a
+ * teardown causes.
+ */
+let suspended = false;
+
+export const isSyncSuspended = () => suspended;
+
+/** Call BEFORE the first destructive step, local or remote. */
+export function suspendSync() {
+  suspended = true;
+}
+
+/**
+ * Called by the sync layer when a fresh authenticated subtree mounts, and by an
+ * ABORTED teardown (a deletion whose server step failed): that account is still
+ * signed in with its data intact, so leaving the latch set would silently stop
+ * syncing until the next launch. Nothing else may call this.
+ */
+export function resumeSync() {
+  suspended = false;
 }
 
 // --- gate resolution (in-memory) ---------------------------------------------
