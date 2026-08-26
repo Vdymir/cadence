@@ -56,13 +56,13 @@ const HERO_IMAGE = require('@/assets/marketing/clarity-hero-cutout.png');
 const HERO_ASSET = Asset.fromModule(HERO_IMAGE);
 const HERO_IMAGE_URI = HERO_ASSET.uri;
 
-// The cutout's wrist runs off the bottom of its own frame, and the bottom fade
-// is what hides that cut. Letterboxing lifts the image edge out from under the
-// fade, so the box tracks the file's ratio instead of the artboard's.
+// The file's own ratio, which sizes the image inside the frame. It is within a
+// rounding error of the frame ratio, so the crop stays honest if the export
+// changes slightly.
 const HERO_ASPECT =
   HERO_ASSET.width && HERO_ASSET.height
     ? HERO_ASSET.width / HERO_ASSET.height
-    : marketing.width.heroArtwork / marketing.height.artwork;
+    : marketing.artwork.fileAspect;
 
 const subscribeToHydration = () => () => {};
 const getClientHydrationSnapshot = () => true;
@@ -328,33 +328,57 @@ function HeroAction({
   );
 }
 
-function HeroArtwork({ desktop, width }: { desktop: boolean; width: number }) {
-  const referenceWidth = desktop
-    ? marketing.width.heroArtwork
-    : marketing.width.mobileArtwork;
-  const referenceHeight = desktop
-    ? marketing.height.artwork
-    : marketing.height.artworkMobile;
-  const artworkWidth = Math.min(width, referenceWidth);
-  const artworkHeight = Math.min(
-    referenceHeight * (artworkWidth / referenceWidth),
-    artworkWidth / HERO_ASPECT,
+function HeroArtwork({
+  desktop,
+  pageWidth,
+  viewportWidth,
+}: {
+  desktop: boolean;
+  pageWidth: number;
+  viewportWidth: number;
+}) {
+  const { artwork } = marketing;
+  // The crop is positioned from the phone screen outward: the screen sits
+  // centered, a fixed inset below the window's top edge, and the image runs to
+  // the window's bottom where the fade hides the cutout's severed wrist.
+  // Sizing the window first, the way the mockup does, put the screen's top
+  // 135pt above the frame and its bottom under the fade.
+  const windowWidth = desktop
+    ? Math.min(pageWidth, marketing.width.heroArtwork)
+    : viewportWidth;
+  // A phone shows the screen large; a desktop can afford the whole hand around
+  // it. Interpolating between the two keeps the crop from jumping at a
+  // breakpoint.
+  const spread = marketing.breakpoints.desktop - marketing.breakpoints.mobile;
+  const progress = Math.min(
+    1,
+    Math.max(0, (viewportWidth - marketing.breakpoints.mobile) / spread),
   );
-  const artworkSize = { width: artworkWidth, height: artworkHeight };
+  const fill = artwork.fillNarrow + (artwork.fillWide - artwork.fillNarrow) * progress;
+  const imageWidth = (windowWidth * fill) / artwork.phoneWidth;
+  const imageHeight = imageWidth / HERO_ASPECT;
+  const imageTop = windowWidth * artwork.topInset - artwork.phoneTop * imageHeight;
+  const windowHeight = imageTop + imageHeight;
 
   return (
-    <View style={[styles.artwork, artworkSize]}>
+    <View style={[styles.artwork, { height: windowHeight, width: windowWidth }]}>
       <Image
         accessibilityLabel="A hand holding a phone while Clarity follows a spoken passage"
         source={HERO_IMAGE}
-        resizeMode="contain"
-        style={artworkSize}
+        resizeMode="cover"
+        style={{
+          height: imageHeight,
+          left: windowWidth / 2 - artwork.phoneCenterX * imageWidth,
+          position: 'absolute',
+          top: imageTop,
+          width: imageWidth,
+        }}
       />
       <View
         pointerEvents="none"
         style={[
           styles.artworkFade,
-          { height: artworkHeight * marketing.artwork.fadeRatio },
+          { height: windowHeight * artwork.fadeRatio },
           webFadeStyle,
         ]}
       />
@@ -362,7 +386,17 @@ function HeroArtwork({ desktop, width }: { desktop: boolean; width: number }) {
   );
 }
 
-function Hero({ desktop, pageWidth }: { desktop: boolean; pageWidth: number }) {
+function Hero({
+  desktop,
+  narrow,
+  pageWidth,
+  viewportWidth,
+}: {
+  desktop: boolean;
+  narrow: boolean;
+  pageWidth: number;
+  viewportWidth: number;
+}) {
   const { colors } = useTheme();
   const copyWidth = desktop ? Math.min(pageWidth, marketing.width.heroCopy) : pageWidth;
 
@@ -409,7 +443,10 @@ function Hero({ desktop, pageWidth }: { desktop: boolean; pageWidth: number }) {
             {
               width: desktop
                 ? Math.min(marketing.width.heroBody, pageWidth)
-                : Math.min(marketing.width.mobileHeroBody, pageWidth),
+                : Math.min(
+                    narrow ? marketing.width.mobileHeroBody : marketing.width.compactMeasure,
+                    pageWidth,
+                  ),
             },
           ]}>
           Clarity listens while you practice, follows every word, and shows you what to work on
@@ -443,7 +480,7 @@ function Hero({ desktop, pageWidth }: { desktop: boolean; pageWidth: number }) {
       </MarketingReveal>
 
       <MarketingReveal order={2} style={styles.artworkReveal}>
-        <HeroArtwork desktop={desktop} width={pageWidth} />
+        <HeroArtwork desktop={desktop} pageWidth={pageWidth} viewportWidth={viewportWidth} />
       </MarketingReveal>
     </View>
   );
@@ -492,10 +529,18 @@ function Feature({
   );
 }
 
-function Features({ desktop, pageWidth }: { desktop: boolean; pageWidth: number }) {
+function Features({
+  desktop,
+  narrow,
+  pageWidth,
+}: {
+  desktop: boolean;
+  narrow: boolean;
+  pageWidth: number;
+}) {
   const columnWidth = desktop
     ? (pageWidth - marketing.gap.featureColumns) / 2
-    : pageWidth;
+    : Math.min(pageWidth, marketing.width.compactMeasure);
 
   return (
     <View
@@ -527,7 +572,10 @@ function Features({ desktop, pageWidth }: { desktop: boolean; pageWidth: number 
             {
               width: desktop
                 ? Math.min(marketing.width.sectionBody, pageWidth)
-                : Math.min(marketing.width.mobileSectionBody, pageWidth),
+                : Math.min(
+                    narrow ? marketing.width.mobileSectionBody : marketing.width.compactMeasure,
+                    pageWidth,
+                  ),
             },
           ]}>
           {desktop
@@ -550,7 +598,7 @@ function Features({ desktop, pageWidth }: { desktop: boolean; pageWidth: number 
           </View>
         </View>
       ) : (
-        <View style={[styles.featureListMobile, { width: pageWidth }]}>
+        <View style={[styles.featureListMobile, { width: columnWidth }]}>
           {FEATURES.map((feature) => (
             <Feature key={feature.title} {...feature} desktop={false} width={columnWidth} />
           ))}
@@ -626,12 +674,16 @@ export function MarketingLandingPage() {
   const ready = hydrated && Boolean(heroAssets || heroAssetError);
   const width = viewportWidth;
   const desktop = width >= marketing.breakpoints.desktop;
-  const phone = width < marketing.breakpoints.tablet;
   const availableWidth = Math.max(width - marketing.inset.gutter * 2, 0);
+  // Below the desktop breakpoint the column tracks the viewport up to the
+  // tablet artboard. Capping it at the 350pt phone artboard left a skinny
+  // ribbon of content stranded in the middle of a 700pt browser window.
   const pageWidth = Math.min(
     availableWidth,
-    desktop ? marketing.width.page : phone ? marketing.width.mobile : marketing.width.tablet,
+    desktop ? marketing.width.page : marketing.width.tablet,
   );
+  // The artboard's copy widths only hold while the column matches the artboard.
+  const narrow = pageWidth <= marketing.width.mobile;
 
   return (
     <>
@@ -649,8 +701,8 @@ export function MarketingLandingPage() {
           contentContainerStyle={styles.pageContent}
           showsVerticalScrollIndicator={false}>
           <Navigation desktop={desktop} pageWidth={pageWidth} />
-          <Hero desktop={desktop} pageWidth={pageWidth} />
-          <Features desktop={desktop} pageWidth={pageWidth} />
+          <Hero desktop={desktop} narrow={narrow} pageWidth={pageWidth} viewportWidth={width} />
+          <Features desktop={desktop} narrow={narrow} pageWidth={pageWidth} />
           <Screens desktop={desktop} pageWidth={pageWidth} viewportWidth={width} />
         </ScrollView>
       ) : (
@@ -788,6 +840,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'column',
     gap: marketing.gap.heroActionsMobile,
+    maxWidth: marketing.width.mobile,
     width: '100%',
   },
   comingSoonAction: {
@@ -819,8 +872,6 @@ const styles = StyleSheet.create({
     opacity: marketing.opacity.disabled,
   },
   artwork: {
-    alignItems: 'center',
-    justifyContent: 'flex-end',
     overflow: 'hidden',
     position: 'relative',
   },

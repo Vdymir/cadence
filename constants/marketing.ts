@@ -20,7 +20,9 @@ export const marketing = {
     // This width preserves the artboard's intended three-line wrap.
     mobileHeroBody: 300,
     mobileSectionBody: 340,
-    mobileArtwork: 1014,
+    /** Readable measure for the mobile type scale, used once the column
+     * outgrows the 350pt phone artboard. Roughly 70 characters at 16pt. */
+    compactMeasure: 520,
     // Five cards plus their gaps land inside the 1200pt page on desktop.
     screenshot: 216,
     screenshotMobile: 232,
@@ -32,8 +34,6 @@ export const marketing = {
     heroCta: 52,
     heroCtaMobile: 54,
     secondaryCtaMobile: 40,
-    artwork: 698,
-    artworkMobile: 653,
     featureDesktop: 120,
     featureMobile: 104,
     mobileMenuItem: 40,
@@ -101,8 +101,24 @@ export const marketing = {
     pressed: 0.68,
   },
   artwork: {
-    /** Share of the artwork's height the bottom fade covers, so the cutout's
-     * cropped wrist stays hidden at every breakpoint. 190 / 698 on desktop. */
+    /** The phone's box in the cutout, read off a percentage grid laid over the
+     * file: its body spans 57.3% to 79.2% across and starts 5.5% down. Every
+     * value below places the crop from this box, so the phone never lands
+     * under a window edge or under the bottom fade. */
+    phoneCenterX: 0.6885,
+    phoneWidth: 0.219,
+    phoneTop: 0.055,
+    /** Share of the window width the phone fills, at the mobile and desktop
+     * breakpoints, interpolated in between. */
+    fillNarrow: 0.62,
+    fillWide: 0.293,
+    /** Clear space above the phone, as a share of the window width. */
+    topInset: 0.06,
+    /** The cutout's own ratio, 957 / 617, used when the asset has not measured
+     * itself yet. */
+    fileAspect: 957 / 617,
+    /** Share of the window's height the bottom fade covers, so the cutout's
+     * severed wrist stays hidden at every breakpoint. 190 / 698 in the mockup. */
     fadeRatio: 0.272,
     fade:
       'linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.18) 28%, rgba(255,255,255,0.72) 70%, #FFFFFF 100%)',
