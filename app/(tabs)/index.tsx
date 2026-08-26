@@ -20,7 +20,6 @@ import { WordsToMaster } from '@/components/words-to-master';
 import { PASSAGES } from '@/constants/passages';
 import { spacing, TAB_BAR_SCROLL_INSET } from '@/constants/theme';
 import { useMarkInteractive } from '@/hooks/use-mark-interactive';
-import { useSetting } from '@/hooks/use-settings';
 import { useSessionRecords, useDerivedStats, useWords } from '@/hooks/use-session-history';
 import { useNow } from '@/hooks/use-now';
 import { useSpeakingSummary } from '@/hooks/use-speaking-summary';
@@ -29,24 +28,16 @@ import { generateWordPracticePassage } from '@/services/practice-generation';
 import { speakWord } from '@/services/word-pronunciation';
 
 /** Takes `now` from the shared clock so it refreshes on foreground instead of
- * being frozen at whatever hour the screen first mounted. */
-function timeOfDay(now: number) {
+ * being frozen at whatever hour the screen first mounted.
+ *
+ * The time of day is the whole greeting. The account's `displayName` is
+ * deliberately NOT in it: the name is for Settings, not for the header. */
+function greeting(now: number) {
   const hour = new Date(now).getHours();
   if (hour < 5) return 'Good Evening';
   if (hour < 12) return 'Good Morning';
   if (hour < 17) return 'Good Afternoon';
   return 'Good Evening';
-}
-
-/**
- * The name is what onboarding asks for first and what Settings edits, so it
- * belongs on the one screen that greets. It is optional in both places, and it
- * arrives from the account a moment after a sign-in on a new device, so the
- * greeting has to read fine without it.
- */
-function greeting(now: number, displayName: string) {
-  const name = displayName.trim();
-  return name.length > 0 ? `${timeOfDay(now)}, ${name}` : timeOfDay(now);
 }
 
 export default function HomeScreen() {
@@ -59,7 +50,6 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
 
   const now = useNow();
-  const [displayName] = useSetting('displayName');
   const stats = useDerivedStats();
   const records = useSessionRecords();
   // The same rolling-7-day figures Analytics leads with, so the two tabs can
@@ -139,11 +129,11 @@ export default function HomeScreen() {
           opacity — and gets its fade-in from the splash overlay instead. */}
       <View style={styles.header}>
         {/* flexShrink: the header row also holds the actions, so the title
-            yields width to them and wraps onto a second line with a name
-            rather than pushing them off screen or truncating to "D…". */}
+            yields width to them and wraps onto a second line rather than
+            pushing them off screen or truncating to "Good Afternoo…". */}
         <IntroReveal order={0} style={styles.greeting}>
           <ThemedText variant="largeTitle" numberOfLines={2}>
-            {greeting(now, displayName)}
+            {greeting(now)}
           </ThemedText>
         </IntroReveal>
         <IntroReveal order={0} fade={false}>
