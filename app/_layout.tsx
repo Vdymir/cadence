@@ -1,17 +1,20 @@
 import { ClerkProvider, useAuth } from "@clerk/expo";
 import { resourceCache } from "@clerk/expo/resource-cache";
 import { tokenCache } from "@clerk/expo/token-cache";
+import { ConvexReactClient } from "convex/react";
+import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { useFonts } from "expo-font";
 import { Observe, ObserveErrorBoundary, ObserveRoot } from "expo-observe";
 import { DarkTheme, DefaultTheme, ThemeProvider } from "expo-router";
 import { Stack } from "expo-router/stack";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useSyncExternalStore, type ReactNode } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { AuthBridge } from "@/components/auth-bridge";
+import { ConvexSync } from "@/components/convex-sync";
 import { ProgressiveBlur } from "@/components/glass-tabs";
 import { ObserveErrorFallback } from "@/components/observe-error-fallback";
 import { IntroRevealProvider, SplashOverlay } from "@/components/splash";
@@ -21,7 +24,13 @@ import { AppReadyProvider } from "@/hooks/use-mark-interactive";
 import { useSettings } from "@/hooks/use-settings";
 import { SubscriptionProvider } from "@/hooks/use-subscription";
 import { useTheme } from "@/hooks/use-theme";
+import { clearAccountData } from "@/services/account";
 import { getLastSignedInUserId } from "@/services/auth-state";
+import {
+  getSettingsResolved,
+  resetLocalStoresOnce,
+  subscribeSyncState,
+} from "@/services/sync-state";
 
 /**
  * EAS Observe. The expo-router integration adds per-route navigation metrics
@@ -48,6 +57,41 @@ Observe.configure({
  */
 const CLERK_PUBLISHABLE_KEY =
   process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
+
+/**
+ * Same explicit-read rule as the Clerk key. Also NOT asserted at module scope,
+ * and for a stronger reason: `ConvexReactClient` validates the URL in its
+ * constructor and throws on an empty one, so the client is built lazily below,
+ * inside render, where `ObserveErrorBoundary` can catch and report a missing
+ * value exactly like a missing Clerk key.
+ */
+const CONVEX_URL = process.env.EXPO_PUBLIC_CONVEX_URL ?? "";
+
+let convexClient: ConvexReactClient | null = null;
+
+/** A module-level singleton, not `useMemo`: a recomputed memo would open a
+ * second WebSocket and orphan the first. */
+function getConvexClient(): ConvexReactClient {
+  if (!convexClient) {
+    convexClient = new ConvexReactClient(CONVEX_URL, {
+      // Off on purpose. This project has a web build (EXPO_MARKETING_WEB=1)
+      // where the default attaches a real `beforeunload` prompt.
+      unsavedChangesWarning: false,
+    });
+  }
+  return convexClient;
+}
+
+/**
+ * One-time wipe of pre-account local data, before any store hydrates.
+ *
+ * History recorded before sign-in existed has no owner; uploading it would
+ * hand it to whichever account signs in first on this device. Local data was
+ * disposable when accounts shipped, so it is dropped once, behind a guard the
+ * sign-out wipe does not touch. `clearAccountData` also clears the sign-in
+ * flag, which is correct here: nothing on the device belongs to anyone yet.
+ */
+resetLocalStoresOnce(clearAccountData);
 
 /** The QA seed route is compiled to a refusal unless the simulator build profile
  * sets this, and now it is also removed from the navigator in every other build. */
@@ -189,6 +233,21 @@ function RootLayout() {
   // beneath the fade); splashDone flips when the fade completes (overlay unmounts).
   const { revealed, setRevealed, splashDone, setSplashDone } = useIntroReveal();
 
+  // The fresh-install hold. `onboardingCompletedAt` is null both for a brand
+  // new user and for a returning user on a new device, and only the account's
+  // settings can tell them apart. Until they answer (or Clerk says signed out,
+  // or the bounded wait in ConvexSync expires) the splash stays on its last
+  // frame and the navigator waits, so a returning user never sees onboarding
+  // for a beat. Every later launch has the local value and never waits.
+  // Confined to the splash on purpose: after it, a hold would blank the app.
+  const { onboardingCompletedAt } = useSettings();
+  const settingsResolved = useSyncExternalStore(
+    subscribeSyncState,
+    getSettingsResolved,
+    getSettingsResolved,
+  );
+  const holdGate = !splashDone && onboardingCompletedAt == null && !settingsResolved;
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       {/* A render error anywhere below here used to take the app down with
@@ -210,7 +269,15 @@ function RootLayout() {
             tokenCache={tokenCache}
             __experimental_resourceCache={resourceCache}
           >
+            {/* Convex, authenticated by the Clerk session above it. Renders
+              its children unconditionally and never gates. `useConvexAuth`,
+              `<Authenticated>`, and `<AuthLoading>` belong ONLY inside
+              ConvexSync: the root gate below is synchronous and offline-first,
+              and a Convex gate would put a network wait in front of a
+              returning user's own local data. */}
+            <ConvexProviderWithClerk client={getConvexClient()} useAuth={useAuth}>
             <AuthBridge />
+            <ConvexSync />
             {/* Configures RevenueCat and holds the Clarity Pro entitlement for
               every screen. Above the routes so the first render of any screen
               can already branch on it, and outside the font gate so the SDK
@@ -223,7 +290,7 @@ function RootLayout() {
               <AppReadyProvider value={splashDone}>
                 <IntroRevealProvider value={revealed}>
                   <NavThemeProvider>
-                    {fontsReady || fontError ? (
+                    {(fontsReady || fontError) && !holdGate ? (
                       <RootNavigator scheme={scheme} />
                     ) : null}
                     {/* The splash backdrop inverts the scheme (light mode plays on
@@ -231,6 +298,7 @@ function RootLayout() {
                     <StatusBar style={splashDone ? "auto" : scheme} />
                     {!splashDone ? (
                       <SplashOverlay
+                        hold={holdGate}
                         onReveal={() => setRevealed(true)}
                         onDone={() => setSplashDone(true)}
                       />
@@ -239,6 +307,7 @@ function RootLayout() {
                 </IntroRevealProvider>
               </AppReadyProvider>
             </SubscriptionProvider>
+            </ConvexProviderWithClerk>
           </ClerkProvider>
         </KeyboardProvider>
       </ObserveErrorBoundary>

@@ -1,4 +1,5 @@
 import { useClerk, useUser } from '@clerk/expo';
+import { useMutation } from 'convex/react';
 import { CheckmarkCircle02Icon } from '@hugeicons-pro/core-solid-rounded';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import * as Haptics from 'expo-haptics';
@@ -15,6 +16,7 @@ import { radius, spacing, type } from '@/constants/theme';
 import { useMarkInteractive } from '@/hooks/use-mark-interactive';
 import { useSetting } from '@/hooks/use-settings';
 import { useTheme } from '@/hooks/use-theme';
+import { api } from '@/convex/_generated/api';
 import { deleteAccount, signOutAndClear } from '@/services/account';
 import type { SkillKey } from '@/types/history';
 
@@ -111,6 +113,7 @@ export default function SettingsScreen() {
   const { colors } = useTheme();
   const { user } = useUser();
   const { signOut } = useClerk();
+  const deleteRemoteBatch = useMutation(api.account.deleteAll);
   const [displayName, setDisplayName] = useSetting('displayName');
   const [accentLocale, setAccentLocale] = useSetting('accentLocale');
   const [goalMinutes, setGoalMinutes] = useSetting('goalMinutes');
@@ -180,9 +183,15 @@ export default function SettingsScreen() {
             setBusy(true);
             try {
               await deleteAccount(
-                // Server-side data lands here with the Convex phase; until then
-                // the account holds nothing beyond the Clerk user itself.
-                async () => {},
+                // Runs first, and a failure aborts: once the Clerk user is
+                // gone nothing can delete these rows. The mutation is bounded,
+                // so loop until it reports the tables empty.
+                async () => {
+                  for (;;) {
+                    const { done } = await deleteRemoteBatch({});
+                    if (done) return;
+                  }
+                },
                 () => user.delete(),
                 () => signOut(),
               );

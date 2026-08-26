@@ -17,6 +17,9 @@ export const getSettings = store.getSettings;
 export const subscribe = store.subscribe;
 export const setSetting = store.set;
 export const resetSettings = store.reset;
+/** Sync-layer seams: per-field write stamps, and the server-wins apply path. */
+export const getSettingUpdatedAt = store.getUpdatedAt;
+export const applyRemoteSettings = store.applyRemote;
 
 /** The accent to grade against, readable from outside React. */
 export function getAccentLocale(): AccentLocale {

@@ -18,6 +18,7 @@ import { forgetPurchaser } from '@/services/purchases';
 import { setLastSignedInUserId } from '@/services/auth-state';
 import { clearAccountHistory } from '@/services/session-history';
 import { resetSettings } from '@/services/settings';
+import { clearSyncState } from '@/services/sync-state';
 import { clearCustomPassages } from '@/services/user-passages';
 
 export type SignOutFn = () => Promise<unknown>;
@@ -26,6 +27,9 @@ export function clearAccountData() {
   clearAccountHistory();
   clearCustomPassages();
   resetSettings();
+  // Cursors go with the data they describe, or the next account on this
+  // device would start its upload from another account's position.
+  clearSyncState();
   setLastSignedInUserId(null);
 }
 

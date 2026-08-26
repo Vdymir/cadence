@@ -167,6 +167,16 @@ export function createSettingsStore(kv: KvBackend, deps: SettingsStoreDeps = {})
     return true;
   };
 
+  /** A plain function, not a method: callers export these detached
+   * (`services/settings.ts`), so nothing here may rely on `this`. */
+  const getUpdatedAt = (key: SettingsKey): number => {
+    try {
+      return kv.getNumber(stampKey(key)) ?? 0;
+    } catch {
+      return 0;
+    }
+  };
+
   return {
     getSettings: hydrate,
 
@@ -190,13 +200,7 @@ export function createSettingsStore(kv: KvBackend, deps: SettingsStoreDeps = {})
       return true;
     },
 
-    getUpdatedAt(key) {
-      try {
-        return kv.getNumber(stampKey(key)) ?? 0;
-      } catch {
-        return 0;
-      }
-    },
+    getUpdatedAt,
 
     applyRemote(patch, stamps) {
       const current = hydrate();
@@ -207,7 +211,7 @@ export function createSettingsStore(kv: KvBackend, deps: SettingsStoreDeps = {})
         const remoteStamp = stamps[key] ?? 0;
         // Local wins on a strictly newer stamp; ties go to the server, which is
         // the only party that has seen every device.
-        if (this.getUpdatedAt(key) > remoteStamp) continue;
+        if (getUpdatedAt(key) > remoteStamp) continue;
         if (current[key] === value) continue;
         try {
           if (!writeVerified(key, value as never, remoteStamp)) continue;

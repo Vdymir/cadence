@@ -19,7 +19,7 @@ import { practiceEnded, practiceStarted } from '@/services/observe-events';
 import type { InflightSession, SessionEndedReason, SessionMode } from '@/types/history';
 import type { SessionResult } from '@/types/session';
 
-export type { WriteResult, ImportSummary, StorageStats } from '@/lib/history-store';
+export type { WriteResult, ImportSummary, StorageStats, WordDelta } from '@/lib/history-store';
 
 /** The pre-MMKV store. Never deleted: it stays a free backup, and if MMKV is
  * ever cleared the migration guard clears with it and the import re-runs. */
@@ -53,6 +53,11 @@ export const getStorageStats = store.getStats;
 export const getLastError = store.getLastError;
 export const checkpointSession = store.checkpointSession;
 export const endSession = store.endSession;
+/** Sync-layer seams: verdicts awaiting upload, and the fold for ones that
+ * arrived from another device. */
+export const getWordDeltas = store.getWordDeltas;
+export const removeWordDeltas = store.removeWordDeltas;
+export const applyWordVerdicts = store.applyWordVerdicts;
 
 /**
  * Opens the crash checkpoint for a new attempt, and reports the start to EAS
