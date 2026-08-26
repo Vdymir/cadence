@@ -64,7 +64,7 @@ function ChoiceListRow({
       accessibilityLabel={caption ? `${title}, ${caption}` : title}
       style={({ pressed }) => [styles.row, { opacity: pressed ? 0.6 : 1 }]}>
       <View style={styles.rowText}>
-        <ThemedText variant="headline" weight={selected ? 'semibold' : 'regular'}>
+        <ThemedText variant="headline">
           {title}
         </ThemedText>
         {caption ? (

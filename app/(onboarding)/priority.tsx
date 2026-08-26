@@ -20,8 +20,12 @@ export default function PriorityStep() {
   useMarkInteractive();
   const [priority, setPriority] = useSetting('prioritySkill');
   const [writeFailed, setWriteFailed] = useState(false);
+  // The store's default is already null, so "Not sure yet" cannot read its
+  // selection from the value alone: it is selected once tapped, not on arrival.
+  const [notSure, setNotSure] = useState(false);
 
   const choose = (value: SkillKey | null) => {
+    setNotSure(value === null);
     if (value === priority) return;
     setWriteFailed(!setPriority(value));
   };
@@ -48,11 +52,11 @@ export default function PriorityStep() {
             />
           </OptionCard>
         ))}
-        <OptionCard selected={false} accessibilityLabel="Not sure yet" onSelect={() => choose(null)}>
+        <OptionCard selected={notSure} accessibilityLabel="Not sure yet" onSelect={() => choose(null)}>
           <ChoiceRow
             title="Not sure yet"
             caption="Start with a mix and let Clarity work it out."
-            selected={false}
+            selected={notSure}
           />
         </OptionCard>
       </View>

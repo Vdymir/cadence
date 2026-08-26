@@ -2,8 +2,6 @@ import * as Haptics from 'expo-haptics';
 import { Pressable, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import type { ReactNode } from 'react';
 
-import { useTheme } from '@/hooks/use-theme';
-
 import { GlassSurface } from './glass-surface';
 
 export type OptionCardProps = {
@@ -22,11 +20,12 @@ export type OptionCardProps = {
  * One choice in a single-select group: the paywall plans, the onboarding accent,
  * goal, and priority pickers.
  *
- * The glass is an ABSOLUTE SIBLING of the content, not its ancestor. The card's
- * children stay free to hold other native views (a `GlassView`, a `Switch`)
- * without nesting glass, which does not render on iOS 26. The selection border
- * lives on the glass so it hugs the same continuous corners. The `Pressable`
- * wraps everything because the glass is a native material and the touch target
+ * The content renders INSIDE the interactive glass, the same way `PrimaryButton`
+ * does: the native press response scales the material, and the content has to
+ * ride along with it. That means children must not hold their own glass
+ * (nested glass does not render on iOS 26); today none do. Selection is the
+ * child's job (the checkmark), never a border on the surface. The `Pressable`
+ * wraps the glass because the material is a native view and the touch target
  * must sit above it.
  */
 export function OptionCard({
@@ -36,7 +35,6 @@ export function OptionCard({
   accessibilityLabel,
   style,
 }: OptionCardProps) {
-  const { colors } = useTheme();
   return (
     <Pressable
       accessibilityRole="radio"
@@ -46,16 +44,10 @@ export function OptionCard({
         Haptics.selectionAsync();
         onSelect();
       }}
-      style={({ pressed }) => [styles.card, pressed && styles.pressed, style]}>
-      <GlassSurface
-        radius="lg"
-        interactive
-        style={[
-          StyleSheet.absoluteFill,
-          selected && { borderWidth: 2, borderColor: colors.accent },
-        ]}
-      />
-      {children}
+      style={({ pressed }) => [pressed && styles.pressed, style]}>
+      <GlassSurface radius="lg" interactive style={styles.card}>
+        {children}
+      </GlassSurface>
     </Pressable>
   );
 }

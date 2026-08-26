@@ -22,7 +22,6 @@ import { spacing, TAB_BAR_SCROLL_INSET } from '@/constants/theme';
 import { useMarkInteractive } from '@/hooks/use-mark-interactive';
 import { useSessionRecords, useDerivedStats, useWords } from '@/hooks/use-session-history';
 import { useNow } from '@/hooks/use-now';
-import { useSettings } from '@/hooks/use-settings';
 import { useSpeakingSummary } from '@/hooks/use-speaking-summary';
 import { totals } from '@/lib/stats';
 import { generateWordPracticePassage } from '@/services/practice-generation';
@@ -48,7 +47,6 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
 
   const now = useNow();
-  const { displayName } = useSettings();
   const stats = useDerivedStats();
   const records = useSessionRecords();
   // The same rolling-7-day figures Analytics leads with, so the two tabs can
@@ -132,7 +130,7 @@ export default function HomeScreen() {
             rather than pushing them off screen or truncating to "D…". */}
         <IntroReveal order={0} style={styles.greeting}>
           <ThemedText variant="largeTitle" numberOfLines={2}>
-            {displayName ? `${greeting(now)}, ${displayName}` : greeting(now)}
+            {greeting(now)}
           </ThemedText>
         </IntroReveal>
         <IntroReveal order={0} fade={false}>

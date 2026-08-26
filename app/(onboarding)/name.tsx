@@ -39,7 +39,6 @@ export default function NameStep() {
       subtitle="Clarity uses your name to greet you on the home screen. Nothing else."
       ctaTitle="Continue"
       onContinue={next}
-      keyboard
       note={writeFailed ? 'That name could not be saved right now. You can set it in Settings later.' : null}>
       {/* Glass is chrome, solid cards are content: the same flat card the
           passage editor and Settings use. */}

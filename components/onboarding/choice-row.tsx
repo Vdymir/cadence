@@ -38,7 +38,7 @@ export function ChoiceRow({ title, caption, selected, icon }: ChoiceRowProps) {
         </View>
       ) : null}
       <View style={styles.text}>
-        <ThemedText variant="headline" weight={selected ? 'semibold' : 'regular'}>
+        <ThemedText variant="headline">
           {title}
         </ThemedText>
         {caption ? (
