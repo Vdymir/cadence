@@ -45,6 +45,7 @@ export const subscribe = store.subscribe;
 export const getWordStats = store.getWordStats;
 export const removeRecord = store.removeRecord;
 export const clearHistory = store.clearAll;
+export const clearAccountHistory = store.clearAccountData;
 export const exportHistory = store.exportHistory;
 export const importHistory = store.importHistory;
 export const getQuarantine = store.getQuarantine;

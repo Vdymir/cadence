@@ -13,16 +13,36 @@
  *  2. A value that cannot be validated is replaced by its default rather than
  *     read back. A settings file is not worth failing a launch over, and a
  *     corrupt accent code must not reach the Azure request as a locale.
+ *
+ * Every field also records WHEN it was last written (`set/<field>At`). The sync
+ * layer resolves two devices field by field on those stamps, so a device that
+ * changed only the accent cannot overwrite the other device's daily goal. A
+ * field never written on this device reads as 0, which is what lets the server
+ * win on a fresh install.
  */
 
 import { ACCENTS, DEFAULT_ACCENT } from '@/constants/accents';
+import { DEFAULT_GOAL_MINUTES, isGoalMinutes } from '@/constants/goals';
+import { SKILL_ORDER } from '@/constants/metrics';
 import type { KvBackend } from '@/lib/history-store';
+import type { SkillKey } from '@/types/history';
 import type { AccentLocale, Settings } from '@/types/settings';
 
-const SETTINGS_KEY = {
+export type SettingsKey = keyof Settings;
+
+const SETTINGS_KEY: Record<SettingsKey, string> = {
   accentLocale: 'set/accentLocale',
   improveClarity: 'set/improveClarity',
-} as const;
+  displayName: 'set/displayName',
+  goalMinutes: 'set/goalMinutes',
+  prioritySkill: 'set/prioritySkill',
+  onboardingCompletedAt: 'set/onboardingCompletedAt',
+};
+
+const stampKey = (key: SettingsKey) => `${SETTINGS_KEY[key]}At`;
+
+/** Every `set/` key this store owns, for a clean account-scoped wipe. */
+export const SETTINGS_KEY_PREFIX = 'set/';
 
 /**
  * `improveClarity` defaults to ON.
@@ -35,12 +55,26 @@ const SETTINGS_KEY = {
 export const DEFAULT_SETTINGS: Settings = {
   accentLocale: DEFAULT_ACCENT,
   improveClarity: true,
+  displayName: '',
+  goalMinutes: DEFAULT_GOAL_MINUTES,
+  prioritySkill: null,
+  onboardingCompletedAt: null,
 };
 
 function parseAccentLocale(raw: string | undefined): AccentLocale {
   if (raw == null) return DEFAULT_SETTINGS.accentLocale;
   const match = ACCENTS.find((accent) => accent.locale === raw);
   return match ? match.locale : DEFAULT_SETTINGS.accentLocale;
+}
+
+function parseSkill(raw: string | undefined): SkillKey | null {
+  if (raw == null) return null;
+  return (SKILL_ORDER as readonly string[]).includes(raw) ? (raw as SkillKey) : null;
+}
+
+/** Positive epoch ms, or null. A zero or negative stamp is not a completion. */
+function parseTimestamp(raw: number | undefined): number | null {
+  return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? raw : null;
 }
 
 export type SettingsStore = {
@@ -52,33 +86,85 @@ export type SettingsStore = {
    * which case the snapshot is left alone: a switch that flips in the UI and
    * reverts on next launch is worse than one that does not move.
    */
-  set<K extends keyof Settings>(key: K, value: Settings[K]): boolean;
+  set<K extends SettingsKey>(key: K, value: Settings[K]): boolean;
+  /** Epoch ms of the last local write to `key`; 0 when never written here. */
+  getUpdatedAt(key: SettingsKey): number;
+  /**
+   * Take the server's word for a field, stamping it with the SERVER's time so a
+   * later local write still wins on a newer stamp. Returns true when the
+   * snapshot changed. Skips fields whose local stamp is newer.
+   */
+  applyRemote(patch: Partial<Settings>, stamps: Partial<Record<SettingsKey, number>>): boolean;
   /** Testing/reset seam: drop every stored setting back to its default. */
   reset(): void;
 };
 
-export function createSettingsStore(kv: KvBackend): SettingsStore {
+export type SettingsStoreDeps = {
+  /** Injected clock so tests can pin stamps. */
+  now?: () => number;
+};
+
+export function createSettingsStore(kv: KvBackend, deps: SettingsStoreDeps = {}): SettingsStore {
+  const now = deps.now ?? (() => Date.now());
   const listeners = new Set<() => void>();
   let snapshot: Settings | null = null;
 
   const hydrate = (): Settings => {
     if (snapshot) return snapshot;
-    let improveClarity = DEFAULT_SETTINGS.improveClarity;
-    let accentLocale = DEFAULT_SETTINGS.accentLocale;
+    const next: Settings = { ...DEFAULT_SETTINGS };
     try {
-      const stored = kv.getBoolean(SETTINGS_KEY.improveClarity);
-      if (typeof stored === 'boolean') improveClarity = stored;
-      accentLocale = parseAccentLocale(kv.getString(SETTINGS_KEY.accentLocale));
+      const improve = kv.getBoolean(SETTINGS_KEY.improveClarity);
+      if (typeof improve === 'boolean') next.improveClarity = improve;
+      next.accentLocale = parseAccentLocale(kv.getString(SETTINGS_KEY.accentLocale));
+      const name = kv.getString(SETTINGS_KEY.displayName);
+      if (typeof name === 'string') next.displayName = name;
+      const goal = kv.getNumber(SETTINGS_KEY.goalMinutes);
+      if (isGoalMinutes(goal)) next.goalMinutes = goal;
+      next.prioritySkill = parseSkill(kv.getString(SETTINGS_KEY.prioritySkill));
+      next.onboardingCompletedAt = parseTimestamp(kv.getNumber(SETTINGS_KEY.onboardingCompletedAt));
     } catch {
       // A backend that cannot be read yields the defaults, which is a working
       // app rather than a failed launch.
     }
-    snapshot = { accentLocale, improveClarity };
+    snapshot = next;
     return snapshot;
   };
 
   const emit = () => {
     for (const listener of listeners) listener();
+  };
+
+  /** Read one field back from disk, through the same parser hydration uses. */
+  const readBack = <K extends SettingsKey>(key: K): Settings[K] => {
+    switch (key) {
+      case 'accentLocale':
+        return parseAccentLocale(kv.getString(SETTINGS_KEY.accentLocale)) as Settings[K];
+      case 'improveClarity':
+        return kv.getBoolean(SETTINGS_KEY.improveClarity) as Settings[K];
+      case 'displayName':
+        return (kv.getString(SETTINGS_KEY.displayName) ?? '') as Settings[K];
+      case 'goalMinutes': {
+        const goal = kv.getNumber(SETTINGS_KEY.goalMinutes);
+        return (isGoalMinutes(goal) ? goal : DEFAULT_GOAL_MINUTES) as Settings[K];
+      }
+      case 'prioritySkill':
+        return parseSkill(kv.getString(SETTINGS_KEY.prioritySkill)) as Settings[K];
+      case 'onboardingCompletedAt':
+        return parseTimestamp(kv.getNumber(SETTINGS_KEY.onboardingCompletedAt)) as Settings[K];
+    }
+  };
+
+  /**
+   * Write one field and confirm it landed. `null` is stored as an absent key,
+   * so the read-back parser turns it back into `null` and the comparison holds.
+   * Throws when the backend does; the caller decides what that means.
+   */
+  const writeVerified = <K extends SettingsKey>(key: K, value: Settings[K], stamp: number) => {
+    if (value === null) kv.remove(SETTINGS_KEY[key]);
+    else kv.set(SETTINGS_KEY[key], value as string | number | boolean);
+    if (readBack(key) !== value) return false;
+    kv.set(stampKey(key), stamp);
+    return true;
   };
 
   return {
@@ -93,14 +179,9 @@ export function createSettingsStore(kv: KvBackend): SettingsStore {
       const current = hydrate();
       if (current[key] === value) return true;
       try {
-        kv.set(SETTINGS_KEY[key], value);
         // Memory equals disk: confirm by reading back, not by assuming the
         // write landed.
-        const readBack =
-          key === 'improveClarity'
-            ? kv.getBoolean(SETTINGS_KEY.improveClarity)
-            : parseAccentLocale(kv.getString(SETTINGS_KEY.accentLocale));
-        if (readBack !== value) return false;
+        if (!writeVerified(key, value, now())) return false;
       } catch {
         return false;
       }
@@ -109,9 +190,43 @@ export function createSettingsStore(kv: KvBackend): SettingsStore {
       return true;
     },
 
+    getUpdatedAt(key) {
+      try {
+        return kv.getNumber(stampKey(key)) ?? 0;
+      } catch {
+        return 0;
+      }
+    },
+
+    applyRemote(patch, stamps) {
+      const current = hydrate();
+      let next: Settings | null = null;
+      for (const key of Object.keys(patch) as SettingsKey[]) {
+        const value = patch[key];
+        if (value === undefined) continue;
+        const remoteStamp = stamps[key] ?? 0;
+        // Local wins on a strictly newer stamp; ties go to the server, which is
+        // the only party that has seen every device.
+        if (this.getUpdatedAt(key) > remoteStamp) continue;
+        if (current[key] === value) continue;
+        try {
+          if (!writeVerified(key, value as never, remoteStamp)) continue;
+        } catch {
+          continue;
+        }
+        next = { ...(next ?? current), [key]: value };
+      }
+      if (!next) return false;
+      snapshot = next;
+      emit();
+      return true;
+    },
+
     reset() {
       try {
-        for (const key of Object.values(SETTINGS_KEY)) kv.remove(key);
+        for (const key of kv.getAllKeys()) {
+          if (key.startsWith(SETTINGS_KEY_PREFIX)) kv.remove(key);
+        }
       } catch {
         // Best effort; the snapshot below is what callers observe.
       }

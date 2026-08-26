@@ -182,3 +182,12 @@ export function removePassage(id: string) {
   passages = hydrate().filter((p) => p.id !== id);
   for (const listener of listeners) listener();
 }
+
+/** Sign-out wipe: every custom passage, not the migration guard. */
+export function clearCustomPassages() {
+  for (const key of kv.getAllKeys()) {
+    if (key.startsWith(KEY.passage)) kv.remove(key);
+  }
+  passages = [];
+  for (const listener of listeners) listener();
+}

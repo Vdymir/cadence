@@ -1,23 +1,29 @@
+import { useClerk, useUser } from '@clerk/expo';
 import { CheckmarkCircle02Icon } from '@hugeicons-pro/core-solid-rounded';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import * as Haptics from 'expo-haptics';
+import { Observe } from 'expo-observe';
 import { router, Stack } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/ui';
-import { ACCENTS, hasPhonemeDetail, type Accent } from '@/constants/accents';
-import { radius, spacing } from '@/constants/theme';
+import { ACCENTS, hasPhonemeDetail } from '@/constants/accents';
+import { GOAL_OPTIONS } from '@/constants/goals';
+import { SKILL_GOALS, SKILL_LABELS, SKILL_ORDER } from '@/constants/metrics';
+import { radius, spacing, type } from '@/constants/theme';
 import { useMarkInteractive } from '@/hooks/use-mark-interactive';
 import { useSetting } from '@/hooks/use-settings';
 import { useTheme } from '@/hooks/use-theme';
-import type { AccentLocale } from '@/types/settings';
+import { deleteAccount, signOutAndClear } from '@/services/account';
+import type { SkillKey } from '@/types/history';
 
 /** Fixed-size box the native toolbar needs around its one child. */
 const TOOLBAR_TITLE_WIDTH = 200;
 const TOOLBAR_TITLE_HEIGHT = 36;
 
 const CHECK_SIZE = 22;
+const MAX_NAME = 24;
 
 /** Minimum row height, so a one-line row still reads as a tappable list row and
  * a two-line one grows past it. Not a spacing step: it is a control size, like
@@ -37,31 +43,35 @@ function RowDivider() {
   return <View style={[styles.divider, { backgroundColor: colors.divider }]} />;
 }
 
-function AccentRow({
-  accent,
+/** One radio-style row in a single-select list: accent, goal, or priority. */
+function ChoiceListRow({
+  title,
+  caption,
   selected,
   onSelect,
 }: {
-  accent: Accent;
+  title: string;
+  caption?: string;
   selected: boolean;
-  onSelect: (locale: AccentLocale) => void;
+  onSelect: () => void;
 }) {
   const { colors } = useTheme();
-
   return (
     <Pressable
-      onPress={() => onSelect(accent.locale)}
+      onPress={onSelect}
       accessibilityRole="radio"
       accessibilityState={{ selected }}
-      accessibilityLabel={`${accent.label}, ${accent.region}`}
+      accessibilityLabel={caption ? `${title}, ${caption}` : title}
       style={({ pressed }) => [styles.row, { opacity: pressed ? 0.6 : 1 }]}>
       <View style={styles.rowText}>
         <ThemedText variant="headline" weight={selected ? 'semibold' : 'regular'}>
-          {accent.label}
+          {title}
         </ThemedText>
-        <ThemedText variant="footnote" tone="tertiary">
-          {accent.region}
-        </ThemedText>
+        {caption ? (
+          <ThemedText variant="footnote" tone="tertiary">
+            {caption}
+          </ThemedText>
+        ) : null}
       </View>
       {selected ? (
         <HugeiconsIcon icon={CheckmarkCircle02Icon} size={CHECK_SIZE} color={colors.accent} />
@@ -70,8 +80,25 @@ function AccentRow({
   );
 }
 
+function Eyebrow({ children }: { children: string }) {
+  return (
+    <ThemedText variant="eyebrow" tone="tertiary" style={styles.eyebrow}>
+      {children}
+    </ThemedText>
+  );
+}
+
+function Blurb({ children }: { children: string }) {
+  return (
+    <ThemedText variant="footnoteProse" tone="secondary" style={styles.sectionBlurb}>
+      {children}
+    </ThemedText>
+  );
+}
+
 /**
- * Settings: the accent pronunciation is graded against, and the data preference.
+ * Settings: the account, every onboarding answer (so nothing asked once is
+ * locked in), and the data preference.
  *
  * The accent is the consequential one. Azure scores a reading against a
  * reference accent, and the wrong reference is counted as mispronunciation: the
@@ -82,19 +109,32 @@ export default function SettingsScreen() {
   useMarkInteractive();
 
   const { colors } = useTheme();
+  const { user } = useUser();
+  const { signOut } = useClerk();
+  const [displayName, setDisplayName] = useSetting('displayName');
   const [accentLocale, setAccentLocale] = useSetting('accentLocale');
+  const [goalMinutes, setGoalMinutes] = useSetting('goalMinutes');
+  const [prioritySkill, setPrioritySkill] = useSetting('prioritySkill');
   const [improveClarity, setImproveClarity] = useSetting('improveClarity');
+  const [nameDraft, setNameDraft] = useState(displayName);
   const [writeFailed, setWriteFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const handleClose = () => {
     Haptics.selectionAsync();
     router.back();
   };
 
-  const chooseAccent = (locale: AccentLocale) => {
-    if (locale === accentLocale) return;
+  const commitName = () => {
+    const trimmed = nameDraft.trim();
+    if (trimmed === displayName) return;
+    setWriteFailed(!setDisplayName(trimmed));
+  };
+
+  const choose = <T,>(current: T, next: T, write: (value: T) => boolean) => {
+    if (next === current) return;
     Haptics.selectionAsync();
-    setWriteFailed(!setAccentLocale(locale));
+    setWriteFailed(!write(next));
   };
 
   const toggleImprove = (value: boolean) => {
@@ -102,48 +142,202 @@ export default function SettingsScreen() {
     setWriteFailed(!setImproveClarity(value));
   };
 
+  const confirmSignOut = () => {
+    Haptics.selectionAsync();
+    Alert.alert('Sign out of Clarity?', 'Your practice history on this device is removed.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        onPress: async () => {
+          setBusy(true);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          try {
+            // No navigation after this: the root guard flips and drops this modal.
+            await signOutAndClear(() => signOut());
+          } catch (error) {
+            Observe.reportError(error);
+            setBusy(false);
+            Alert.alert('Sign out failed', 'Check your connection and try again.');
+          }
+        },
+      },
+    ]);
+  };
+
+  const confirmDelete = () => {
+    Haptics.selectionAsync();
+    Alert.alert(
+      'Delete your account?',
+      'This removes your account and everything Clarity has stored for it. It cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete account',
+          style: 'destructive',
+          onPress: async () => {
+            if (!user) return;
+            setBusy(true);
+            try {
+              await deleteAccount(
+                // Server-side data lands here with the Convex phase; until then
+                // the account holds nothing beyond the Clerk user itself.
+                async () => {},
+                () => user.delete(),
+                () => signOut(),
+              );
+            } catch (error) {
+              Observe.reportError(error);
+              setBusy(false);
+              Alert.alert('Could not delete your account', 'Check your connection and try again.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const email = user?.primaryEmailAddress?.emailAddress;
+
   return (
     <>
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.background }}
         contentInsetAdjustmentBehavior="automatic"
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}>
-        <ThemedText variant="eyebrow" tone="tertiary" style={styles.eyebrow}>
-          YOUR ACCENT
-        </ThemedText>
-        <ThemedText variant="footnoteProse" tone="secondary" style={styles.sectionBlurb}>
-          Your reading is scored against this accent. Picking the one you actually
-          speak stops your own vowels being counted as mistakes.
-        </ThemedText>
+        <Eyebrow>ACCOUNT</Eyebrow>
+        <SettingsCard>
+          <View style={styles.row}>
+            <View style={styles.rowText}>
+              <ThemedText variant="footnote" tone="tertiary">
+                Name
+              </ThemedText>
+              <TextInput
+                value={nameDraft}
+                onChangeText={setNameDraft}
+                onBlur={commitName}
+                onSubmitEditing={commitName}
+                placeholder="Your first name"
+                placeholderTextColor={colors.secondary}
+                autoCapitalize="words"
+                autoComplete="given-name"
+                maxLength={MAX_NAME}
+                returnKeyType="done"
+                style={[styles.nameInput, { color: colors.foreground }]}
+              />
+            </View>
+          </View>
+          {email ? (
+            <>
+              <RowDivider />
+              <View style={styles.row}>
+                <View style={styles.rowText}>
+                  <ThemedText variant="footnote" tone="tertiary">
+                    Signed in as
+                  </ThemedText>
+                  <ThemedText variant="headline" weight="regular">
+                    {email}
+                  </ThemedText>
+                </View>
+              </View>
+            </>
+          ) : null}
+          <RowDivider />
+          <Pressable
+            accessibilityRole="button"
+            disabled={busy}
+            onPress={confirmSignOut}
+            style={({ pressed }) => [styles.row, { opacity: pressed || busy ? 0.6 : 1 }]}>
+            <ThemedText variant="headline" weight="regular" style={{ color: colors.danger }}>
+              Sign out
+            </ThemedText>
+          </Pressable>
+          <RowDivider />
+          <Pressable
+            accessibilityRole="button"
+            disabled={busy}
+            onPress={confirmDelete}
+            style={({ pressed }) => [styles.row, { opacity: pressed || busy ? 0.6 : 1 }]}>
+            <ThemedText variant="headline" weight="regular" style={{ color: colors.danger }}>
+              Delete account
+            </ThemedText>
+          </Pressable>
+        </SettingsCard>
 
+        <Eyebrow>YOUR ACCENT</Eyebrow>
+        <Blurb>
+          Your reading is scored against this accent. Picking the one you actually speak stops
+          your own vowels being counted as mistakes.
+        </Blurb>
         <SettingsCard>
           {ACCENTS.map((accent, index) => (
             <View key={accent.locale}>
               {index > 0 ? <RowDivider /> : null}
-              <AccentRow
-                accent={accent}
+              <ChoiceListRow
+                title={accent.label}
+                caption={accent.region}
                 selected={accent.locale === accentLocale}
-                onSelect={chooseAccent}
+                onSelect={() => choose(accentLocale, accent.locale, setAccentLocale)}
               />
             </View>
           ))}
         </SettingsCard>
-
         {/* Measured, not assumed: only en-US returns phoneme symbols. Saying so
             is the difference between a user making an informed trade and one
             wondering why the per-sound tips stopped appearing. */}
         {!hasPhonemeDetail(accentLocale) ? (
           <ThemedText variant="footnoteProse" tone="tertiary" style={styles.note}>
-            Per-sound feedback, the tips that name a sound like /θ/, is available
-            for American English only. You still get word and syllable scores.
+            Per-sound feedback, the tips that name a sound like /θ/, is available for American
+            English only. You still get word and syllable scores.
           </ThemedText>
         ) : null}
 
-        <ThemedText variant="eyebrow" tone="tertiary" style={styles.eyebrow}>
-          PRIVACY
-        </ThemedText>
+        <Eyebrow>DAILY GOAL</Eyebrow>
+        <Blurb>Your goal ring on Home fills as you reach this each day.</Blurb>
+        <SettingsCard>
+          {GOAL_OPTIONS.map((option, index) => (
+            <View key={option.minutes}>
+              {index > 0 ? <RowDivider /> : null}
+              <ChoiceListRow
+                title={`${option.minutes} minutes`}
+                caption={option.caption}
+                selected={option.minutes === goalMinutes}
+                onSelect={() => choose(goalMinutes, option.minutes, setGoalMinutes)}
+              />
+            </View>
+          ))}
+        </SettingsCard>
 
+        <Eyebrow>WHAT YOU WANT TO WORK ON</Eyebrow>
+        <Blurb>
+          This picks your early suggestions. Once you have a few scored sessions, Clarity follows
+          your measured results instead.
+        </Blurb>
+        <SettingsCard>
+          {SKILL_ORDER.map((key, index) => (
+            <View key={key}>
+              {index > 0 ? <RowDivider /> : null}
+              <ChoiceListRow
+                title={SKILL_LABELS[key]}
+                caption={SKILL_GOALS[key]}
+                selected={prioritySkill === key}
+                onSelect={() => choose<SkillKey | null>(prioritySkill, key, setPrioritySkill)}
+              />
+            </View>
+          ))}
+          <RowDivider />
+          <ChoiceListRow
+            title="Not sure yet"
+            caption="Start with a mix and let Clarity work it out."
+            selected={prioritySkill === null}
+            onSelect={() => choose<SkillKey | null>(prioritySkill, null, setPrioritySkill)}
+          />
+        </SettingsCard>
+
+        <Eyebrow>PRIVACY</Eyebrow>
         <SettingsCard>
           <View style={styles.row}>
             <View style={styles.rowText}>
@@ -217,6 +411,10 @@ const styles = StyleSheet.create({
   rowText: {
     flex: 1,
     gap: spacing.xxs,
+  },
+  nameInput: {
+    ...type.headline,
+    paddingVertical: 0,
   },
   divider: {
     height: StyleSheet.hairlineWidth,

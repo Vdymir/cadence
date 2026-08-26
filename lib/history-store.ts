@@ -581,6 +581,34 @@ export function createHistoryStore(deps: HistoryStoreDeps) {
     notify();
   }
 
+  /**
+   * Sign-out wipe. Removes everything that belongs to the account that was
+   * signed in, and KEEPS the legacy-import guard. `clearAll` drops that guard on
+   * purpose as a recovery path; here it would be a leak, because the next
+   * launch would re-import this device's old `sessions.json` into whichever
+   * account signs in next.
+   */
+  function clearAccountData() {
+    for (const key of kv.getAllKeys()) {
+      if (
+        key.startsWith(KEY.record) ||
+        key.startsWith(KEY.quarantine) ||
+        key.startsWith(KEY.word) ||
+        key === META_KEY.seq ||
+        key === META_KEY.inflight
+      ) {
+        kv.remove(key);
+      }
+    }
+    kv.trim?.();
+    records = null;
+    wordStats = null;
+    wordStatsList = null;
+    seqCounter = 0;
+    recoveredInflight = 0;
+    notify();
+  }
+
   // --- word mastery ----------------------------------------------------------
 
   function hydrateWords(): Map<string, WordStat> {
@@ -817,6 +845,7 @@ export function createHistoryStore(deps: HistoryStoreDeps) {
     beginSession,
     checkpointSession,
     endSession,
+    clearAccountData,
     exportHistory,
     importHistory,
     getQuarantine,

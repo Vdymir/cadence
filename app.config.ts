@@ -81,6 +81,17 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ...config.experiments,
       typedRoutes: marketingWeb ? false : config.experiments?.typedRoutes,
     },
+    extra: {
+      ...config.extra,
+      // Clerk's native Google hook reads these from `expoConfig.extra` first and
+      // `process.env` second, because EXPO_PUBLIC_ reads inside node_modules are
+      // not inlined in production bundles. Mirroring them here is what makes a
+      // release build find them. The URL scheme is read by the
+      // @clerk/expo-google-signin config plugin at prebuild.
+      EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID: process.env.EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID,
+      EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID: process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID,
+      EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME: process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME,
+    },
     ios: {
       ...config.ios,
       bundleIdentifier: getBundleId(),

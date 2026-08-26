@@ -80,7 +80,8 @@ const light = {
   /** Only the single FOCUS pill on the weakest skill. */
   focus: '#A96400',
   focusBg: '#FDEFDC',
-  /** Form validation only. Never a metric — no metric may render red. */
+  /** Form validation and destructive account actions (sign out, delete). Never
+   * a metric — no metric may render red. */
   danger: '#FF3B30',
 
   // --- Marketing site ---
