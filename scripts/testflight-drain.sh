@@ -9,9 +9,10 @@
 #            filing the same TestFlight submission before either issue is
 #            searchable on GitHub.
 #   claim — acquire the lock and claim the oldest `testflight-queued`
-#           issue. Emits `set-output issue_number <n>` (empty when the
-#           queue is empty or another run holds the lock). Holds the lock
-#           on success; the fix job releases it.
+#           issue. Emits `set-output issue_number <n>`, or the sentinel
+#           `none` when the queue is empty or another run holds the
+#           lock (EAS `set-output` rejects an empty VALUE with exit 2).
+#           Holds the lock on success; the fix job releases it.
 #   fix   — run the fix agent (.agents/fix-prompt.md) on $ISSUE_NUMBER.
 #           On agent failure: label `needs-human`, comment, continue.
 #           Always releases the lock, then dispatches a sweep run if the
@@ -144,19 +145,19 @@ cmd_claim() {
   ensure_labels
   if [ -z "$(oldest_queued)" ]; then
     echo "▸ Queue is empty; nothing to claim."
-    set-output issue_number ""
+    set-output issue_number none
     return 0
   fi
   if ! acquire_lock; then
     echo "▸ Another run holds the fix lock. It chain-drains the queue; nothing to do."
-    set-output issue_number ""
+    set-output issue_number none
     return 0
   fi
   local issue
   issue="$(oldest_queued)"
   if [ -z "$issue" ]; then # drained between the check and the lock
     release_lock
-    set-output issue_number ""
+    set-output issue_number none
     return 0
   fi
   echo "▸ Claimed issue #$issue from the queue (lock held for the fix job)"

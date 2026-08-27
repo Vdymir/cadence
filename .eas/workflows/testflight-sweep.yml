@@ -62,7 +62,7 @@ jobs:
   fix:
     name: Fix the claimed issue, verify, open PR
     needs: [claim]
-    if: ${{ needs.claim.outputs.issue_number != '' }}
+    if: ${{ needs.claim.outputs.issue_number != '' && needs.claim.outputs.issue_number != 'none' }}
     environment: production
     env:
       ISSUE_NUMBER: ${{ needs.claim.outputs.issue_number }}

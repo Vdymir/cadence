@@ -39,7 +39,9 @@ TestFlight tester submits crash/screenshot feedback
    │    number. Losers output nothing; their queued work is picked
    │    up by the holder's chain or the cron.
    │
-   │  job 3 `fix` — skipped unless claim output an issue:
+   │  job 3 `fix` — skipped unless claim output an issue number
+   │    (it emits the sentinel `none`, not an empty string, because
+   │    EAS `set-output` rejects an empty VALUE):
    │    scripts/testflight-drain.sh fix runs the fix agent, releases
    │    the lock, and if the queue still has work dispatches a sweep
    │    run to drain the next issue (the chain).
