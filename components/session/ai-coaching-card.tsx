@@ -165,7 +165,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderCurve: 'continuous',
     overflow: 'hidden',
-    padding: spacing.xl,
+    padding: spacing.xs,
   },
   cardShape: {
     borderRadius: radius.lg,
