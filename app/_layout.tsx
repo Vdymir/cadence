@@ -64,6 +64,14 @@ const CLERK_PUBLISHABLE_KEY =
  * constructor and throws on an empty one, so the client is built lazily below,
  * inside render, where `ObserveErrorBoundary` can catch and report a missing
  * value exactly like a missing Clerk key.
+ *
+ * That only holds because the construction happens inside `ConvexRoot`, a
+ * CHILD of the boundary. Calling it in `RootLayout`'s own return statement
+ * instead evaluates it while the boundary is still an unmounted element, so
+ * the throw escapes to the root: an uncaught JS error, which expo-updates'
+ * error recovery answers with a hard crash on every launch. Build 22 shipped
+ * exactly that after `EXPO_PUBLIC_CONVEX_URL` was left out of the EAS
+ * production environment.
  */
 const CONVEX_URL = process.env.EXPO_PUBLIC_CONVEX_URL ?? "";
 
@@ -80,6 +88,21 @@ function getConvexClient(): ConvexReactClient {
     });
   }
   return convexClient;
+}
+
+/**
+ * Owns the Convex client's construction so a bad or missing
+ * `EXPO_PUBLIC_CONVEX_URL` surfaces as a caught render error under
+ * `ObserveErrorBoundary`, not as an uncaught throw that takes the process
+ * down. Nothing else belongs here: it exists to put `getConvexClient()` one
+ * component below the boundary.
+ */
+function ConvexRoot({ children }: { children: ReactNode }) {
+  return (
+    <ConvexProviderWithClerk client={getConvexClient()} useAuth={useAuth}>
+      {children}
+    </ConvexProviderWithClerk>
+  );
 }
 
 /**
@@ -275,7 +298,7 @@ function RootLayout() {
               ConvexSync: the root gate below is synchronous and offline-first,
               and a Convex gate would put a network wait in front of a
               returning user's own local data. */}
-            <ConvexProviderWithClerk client={getConvexClient()} useAuth={useAuth}>
+            <ConvexRoot>
             <AuthBridge />
             <ConvexSync />
             {/* Configures RevenueCat and holds the Clarity Pro entitlement for
@@ -307,7 +330,7 @@ function RootLayout() {
                 </IntroRevealProvider>
               </AppReadyProvider>
             </SubscriptionProvider>
-            </ConvexProviderWithClerk>
+            </ConvexRoot>
           </ClerkProvider>
         </KeyboardProvider>
       </ObserveErrorBoundary>
