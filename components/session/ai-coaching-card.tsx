@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
   },
   stateCopy: {
     flex: 1,
-    gap: spacing.xs,
+    gap: spacing.xl,
   },
   errorState: {
     gap: spacing.sm,
