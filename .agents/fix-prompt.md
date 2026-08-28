@@ -193,8 +193,20 @@ One session is: start → install → drive → stop.
      - `Fixes #$ISSUE_NUMBER`
      - the root cause, in two or three sentences
      - an **Evidence** section naming the selected class
-     - for `static-visual`, embedded **Before** and **After** screenshots via
-       `https://raw.githubusercontent.com/SchroederNathan/clarity/agent/fix-issue-<n>/.agents/evidence/issue-<n>/<file>.png`
+     - for `static-visual`, the before and after screenshots RENDERED SIDE BY
+       SIDE, not as bare links. Push the branch first, then use this exact
+       two-column table so the images display inline in the PR body:
+
+       ```markdown
+       | Before (baseline `main`, commit `<sha>`) | After (this branch, commit `<sha>`) |
+       | :---: | :---: |
+       | <img src="https://raw.githubusercontent.com/SchroederNathan/clarity/agent/fix-issue-<n>/.agents/evidence/issue-<n>/<before-file>.png" width="380" alt="<what the failing state shows>"> | <img src="https://raw.githubusercontent.com/SchroederNathan/clarity/agent/fix-issue-<n>/.agents/evidence/issue-<n>/<after-file>.png" width="380" alt="<what the fixed state shows>"> |
+       ```
+
+       A URL on its own line renders as a link, not an image, so it is not
+       acceptable. After `gh pr create`, confirm each raw URL returns
+       `HTTP 200` and `content-type: image/png` (`curl -sI <url>`); a 404
+       means the branch or the screenshot commit was not pushed.
      - for `temporal`, `▶ Watch the repro: <session #1 URL>` and
        `▶ Watch the verified fix: <session #2 URL>`; omit these for other
        classes unless the replay materially helps review
