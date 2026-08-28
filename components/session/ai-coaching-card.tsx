@@ -124,6 +124,7 @@ export function AiCoachingCard({ result }: AiCoachingCardProps) {
                     style={[
                       styles.tip,
                       index > 0 && { borderTopColor: colors.divider, borderTopWidth: 1 },
+                      index === tips.length - 1 && styles.tipLast,
                     ]}>
                     <View style={[styles.tipNumber, { backgroundColor: colors.accentBg }]}>
                       <ThemedText variant="footnote" weight="bold" tone="accent">
@@ -165,7 +166,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderCurve: 'continuous',
     overflow: 'hidden',
-    padding: spacing.xs,
+    padding: spacing.xl,
   },
   cardShape: {
     borderRadius: radius.lg,
@@ -207,6 +208,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
     paddingVertical: spacing.lg,
+  },
+  // The last tip's own bottom padding would otherwise stack on top of the
+  // card's bottom padding, making the bottom inset deeper than the top.
+  tipLast: {
+    paddingBottom: 0,
   },
   tipNumber: {
     width: TIP_BADGE_SIZE,
