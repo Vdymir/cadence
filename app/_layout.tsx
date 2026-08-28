@@ -223,13 +223,14 @@ function RootNavigator({ scheme }: { scheme: ColorSchemeName }) {
           name="settings"
           options={{ presentation: "modal", ...blurHeader }}
         />
-        {/* Both draw their own close button and their own scrolling (the
-            paywall is ours, the Customer Center is a RevenueCat-hosted native
-            view), so they take the whole modal with no header of ours on top. */}
+        {/* Same native-header close button as Settings. */}
         <Stack.Screen
           name="paywall"
-          options={{ presentation: "modal", headerShown: false }}
+          options={{ presentation: "modal", ...blurHeader }}
         />
+        {/* The Customer Center is a RevenueCat-hosted native view with its own
+            close button and scrolling, so it takes the whole modal with no
+            header of ours on top. */}
         <Stack.Screen
           name="manage-subscription"
           options={{ presentation: "modal", headerShown: false }}

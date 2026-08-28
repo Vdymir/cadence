@@ -1,9 +1,9 @@
-import { Cancel01Icon, Tick02Icon } from '@hugeicons-pro/core-stroke-rounded';
+import { Tick02Icon } from '@hugeicons-pro/core-stroke-rounded';
 import { CheckmarkCircle02Icon, Crown02Icon } from '@hugeicons-pro/core-solid-rounded';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -244,115 +244,111 @@ export default function PaywallScreen() {
   if (!available) return <PurchasesUnavailable />;
 
   return (
-    <ScrollView
-      contentContainerStyle={[
-        styles.content,
-        { paddingBottom: Math.max(insets.bottom, spacing.lg) + spacing.xxl },
-      ]}
-      showsVerticalScrollIndicator={false}>
-      {/* Pressable wraps the glass rather than the reverse: GlassView renders a
-          native material, so the touch target has to sit above it. */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Close"
-        onPress={close}
-        style={styles.close}>
-        <GlassView isInteractive style={styles.closeCircle}>
-          <HugeiconsIcon icon={Cancel01Icon} size={18} color={colors.secondary} strokeWidth={2} />
-        </GlassView>
-      </Pressable>
-      <View style={styles.brandRow}>
-        <HugeiconsIcon icon={Crown02Icon} size={28} color={PRO_GOLD} />
-        <ThemedText variant="title">Clarity</ThemedText>
-        {isLiquidGlassAvailable() ? (
-          <GlassView glassEffectStyle="regular" tintColor={colors.inverseSurface} style={styles.proBadge}>
-            <ThemedText variant="callout" tone="inverse">
-              Pro
-            </ThemedText>
-          </GlassView>
-        ) : (
-          <View style={[styles.proBadge, { backgroundColor: colors.inverseSurface }]}>
-            <ThemedText variant="callout" tone="inverse">
-              Pro
-            </ThemedText>
-          </View>
-        )}
-      </View>
-
-      <ThemedText variant="largeTitle" style={styles.headline}>
-        Get the full power of Clarity
-      </ThemedText>
-
-      <View style={styles.features}>
-        {FEATURES.map((feature) => (
-          <View key={feature} style={styles.featureRow}>
-            <HugeiconsIcon icon={Tick02Icon} size={20} color={colors.accent} strokeWidth={2} />
-            <ThemedText variant="bodyProse" tone="secondary" style={styles.featureText}>
-              {feature}
-            </ThemedText>
-          </View>
-        ))}
-      </View>
-
-      <View style={styles.flexSpacer} />
-
-      {plans === null && !loadFailed ? (
-        <View style={styles.plansLoading}>
-          <ActivityIndicator color={colors.secondary} />
+    <>
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: Math.max(insets.bottom, spacing.lg) + spacing.xxl },
+        ]}
+        showsVerticalScrollIndicator={false}>
+        <View style={styles.brandRow}>
+          <HugeiconsIcon icon={Crown02Icon} size={28} color={PRO_GOLD} />
+          <ThemedText variant="title">Clarity</ThemedText>
+          {isLiquidGlassAvailable() ? (
+            <GlassView glassEffectStyle="regular" tintColor={colors.inverseSurface} style={styles.proBadge}>
+              <ThemedText variant="callout" tone="inverse">
+                Pro
+              </ThemedText>
+            </GlassView>
+          ) : (
+            <View style={[styles.proBadge, { backgroundColor: colors.inverseSurface }]}>
+              <ThemedText variant="callout" tone="inverse">
+                Pro
+              </ThemedText>
+            </View>
+          )}
         </View>
-      ) : loadFailed ? (
-        <View style={styles.plansLoading}>
-          <ThemedText variant="subheadProse" tone="secondary" style={styles.centeredText}>
-            Plans could not load. Check your connection and reopen this screen.
-          </ThemedText>
-        </View>
-      ) : (
-        <View style={styles.plans}>
-          {plans?.map((plan) => (
-            <PlanCard
-              key={plan.identifier}
-              plan={plan}
-              selected={plan.identifier === selectedId}
-              savings={plan.packageType === PACKAGE_TYPE.ANNUAL ? savings : null}
-              onSelect={() => setSelectedId(plan.identifier)}
-            />
+
+        <ThemedText variant="largeTitle" style={styles.headline}>
+          Get the full power of Clarity
+        </ThemedText>
+
+        <View style={styles.features}>
+          {FEATURES.map((feature) => (
+            <View key={feature} style={styles.featureRow}>
+              <HugeiconsIcon icon={Tick02Icon} size={20} color={colors.accent} strokeWidth={2} />
+              <ThemedText variant="bodyProse" tone="secondary" style={styles.featureText}>
+                {feature}
+              </ThemedText>
+            </View>
           ))}
         </View>
-      )}
 
-      <PrimaryButton
-        title="Continue with Clarity Pro"
-        onPress={buy}
-        disabled={busy || !selected}
-        style={styles.cta}
-      />
+        <View style={styles.flexSpacer} />
 
-      <Pressable
-        accessibilityRole="button"
-        onPress={restorePurchase}
-        disabled={busy}
-        style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}>
-        <ThemedText variant="subhead" tone="secondary">
-          Restore purchase
-        </ThemedText>
-      </Pressable>
+        {plans === null && !loadFailed ? (
+          <View style={styles.plansLoading}>
+            <ActivityIndicator color={colors.secondary} />
+          </View>
+        ) : loadFailed ? (
+          <View style={styles.plansLoading}>
+            <ThemedText variant="subheadProse" tone="secondary" style={styles.centeredText}>
+              Plans could not load. Check your connection and reopen this screen.
+            </ThemedText>
+          </View>
+        ) : (
+          <View style={styles.plans}>
+            {plans?.map((plan) => (
+              <PlanCard
+                key={plan.identifier}
+                plan={plan}
+                selected={plan.identifier === selectedId}
+                savings={plan.packageType === PACKAGE_TYPE.ANNUAL ? savings : null}
+                onSelect={() => setSelectedId(plan.identifier)}
+              />
+            ))}
+          </View>
+        )}
 
-      <View style={styles.legalRow}>
-        <Pressable onPress={() => Linking.openURL(TERMS_URL)} hitSlop={spacing.sm}>
-          <ThemedText variant="caption" tone="tertiary">
-            Terms of Use
+        <PrimaryButton
+          title="Continue with Clarity Pro"
+          onPress={buy}
+          disabled={busy || !selected}
+          style={styles.cta}
+        />
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={restorePurchase}
+          disabled={busy}
+          style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}>
+          <ThemedText variant="subhead" tone="secondary">
+            Restore purchase
           </ThemedText>
         </Pressable>
-        <ThemedText variant="caption" tone="dimmed">
-          |
-        </ThemedText>
-        <Pressable onPress={() => Linking.openURL(PRIVACY_URL)} hitSlop={spacing.sm}>
-          <ThemedText variant="caption" tone="tertiary">
-            Privacy Policy
+
+        <View style={styles.legalRow}>
+          <Pressable onPress={() => Linking.openURL(TERMS_URL)} hitSlop={spacing.sm}>
+            <ThemedText variant="caption" tone="tertiary">
+              Terms of Use
+            </ThemedText>
+          </Pressable>
+          <ThemedText variant="caption" tone="dimmed">
+            |
           </ThemedText>
-        </Pressable>
-      </View>
-    </ScrollView>
+          <Pressable onPress={() => Linking.openURL(PRIVACY_URL)} hitSlop={spacing.sm}>
+            <ThemedText variant="caption" tone="tertiary">
+              Privacy Policy
+            </ThemedText>
+          </Pressable>
+        </View>
+      </ScrollView>
+      {/* Same close control as Settings: the native stack toolbar's xmark. */}
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button icon="xmark" onPress={close} />
+      </Stack.Toolbar>
+    </>
   );
 }
 
@@ -361,17 +357,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
-  },
-  close: {
-    alignSelf: 'flex-start',
-    marginBottom: spacing.lg,
-  },
-  closeCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   centered: {
     flex: 1,
