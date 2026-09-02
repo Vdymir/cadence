@@ -339,13 +339,20 @@ function HeroArtwork({
 }) {
   const { artwork } = marketing;
   // The crop is positioned from the phone screen outward: the screen sits
-  // centered, a fixed inset below the window's top edge, and the image runs to
-  // the window's bottom where the fade hides the cutout's severed wrist.
-  // Sizing the window first, the way the mockup does, put the screen's top
-  // 135pt above the frame and its bottom under the fade.
-  const windowWidth = desktop
+  // centered, a fixed inset below the frame's top edge, and the image runs to
+  // the frame's bottom where the fade hides the cutout's severed wrist.
+  //
+  // Two widths, deliberately. The phone is scaled off the content column, the
+  // way the mockup does, so it does not grow with the monitor. The frame runs
+  // the full viewport: the phone sits at 69% across the cutout, so centering it
+  // carries the forearm well past the left edge, and a frame narrower than the
+  // page cut that forearm off along a hard vertical line in the middle of the
+  // white canvas. Full-bleed, whatever is still cropped leaves at the screen
+  // edge instead, where it reads as a bleed.
+  const scaleWidth = desktop
     ? Math.min(pageWidth, marketing.width.heroArtwork)
     : viewportWidth;
+  const frameWidth = viewportWidth;
   // A phone shows the screen large; a desktop can afford the whole hand around
   // it. Interpolating between the two keeps the crop from jumping at a
   // breakpoint.
@@ -355,20 +362,20 @@ function HeroArtwork({
     Math.max(0, (viewportWidth - marketing.breakpoints.mobile) / spread),
   );
   const fill = artwork.fillNarrow + (artwork.fillWide - artwork.fillNarrow) * progress;
-  const imageWidth = (windowWidth * fill) / artwork.phoneWidth;
+  const imageWidth = (scaleWidth * fill) / artwork.phoneWidth;
   const imageHeight = imageWidth / HERO_ASPECT;
-  const imageTop = windowWidth * artwork.topInset - artwork.phoneTop * imageHeight;
-  const windowHeight = imageTop + imageHeight;
+  const imageTop = scaleWidth * artwork.topInset - artwork.phoneTop * imageHeight;
+  const frameHeight = imageTop + imageHeight;
 
   return (
-    <View style={[styles.artwork, { height: windowHeight, width: windowWidth }]}>
+    <View style={[styles.artwork, { height: frameHeight, width: frameWidth }]}>
       <Image
         accessibilityLabel="A hand holding a phone while Clarity follows a spoken passage"
         source={HERO_IMAGE}
         resizeMode="cover"
         style={{
           height: imageHeight,
-          left: windowWidth / 2 - artwork.phoneCenterX * imageWidth,
+          left: frameWidth / 2 - artwork.phoneCenterX * imageWidth,
           position: 'absolute',
           top: imageTop,
           width: imageWidth,
@@ -378,7 +385,7 @@ function HeroArtwork({
         pointerEvents="none"
         style={[
           styles.artworkFade,
-          { height: windowHeight * artwork.fadeRatio },
+          { height: frameHeight * artwork.fadeRatio },
           webFadeStyle,
         ]}
       />

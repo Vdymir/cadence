@@ -5,7 +5,18 @@ import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import * as Haptics from 'expo-haptics';
 import { router, Stack } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PACKAGE_TYPE, type PurchasesPackage } from 'react-native-purchases';
 
@@ -22,7 +33,16 @@ const PRO_GOLD = '#FFB000';
 
 /** Apple's standard EULA, which covers auto-renewing subscriptions. */
 const TERMS_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
-const PRIVACY_URL = 'https://exponathan-clarity.expo.app/privacy';
+const PRIVACY_URL = 'https://clarityspeech.app/privacy';
+
+/** Plan cards visible at once: two whole ones plus a slice of the third, so the
+ * row reads as scrollable without needing a scrollbar. */
+const VISIBLE_PLANS = 2.2;
+/** Gap between plan cards, and the snap stride together with the card width. */
+const PLAN_GAP = spacing.md;
+/** The selection indicator. Fixes the card's top row height so the price blocks
+ * line up across cards whether or not one carries a savings badge. */
+const INDICATOR_SIZE = 24;
 
 const FEATURES = [
   'Unlimited practice sessions',
@@ -85,16 +105,24 @@ function PurchasesUnavailable() {
   );
 }
 
+/**
+ * One plan as a carousel card: the badge and selection indicator on top, the
+ * name and price stacked below. The row form this replaced could lean on the
+ * full screen width; a card that is a fraction of it has to go vertical.
+ */
 function PlanCard({
   plan,
   selected,
   savings,
+  width,
   onSelect,
 }: {
   plan: PurchasesPackage;
   selected: boolean;
   /** "Save 44%" badge value; only the annual card gets one. */
   savings: number | null;
+  /** Set by the carousel so a slice of the next card stays in view. */
+  width: number;
   onSelect: () => void;
 }) {
   const { colors } = useTheme();
@@ -103,17 +131,16 @@ function PlanCard({
 
   const isAnnual = plan.packageType === PACKAGE_TYPE.ANNUAL;
   const perMonth = isAnnual ? plan.product.pricePerMonthString : null;
+  const caption = perMonth ? `${perMonth} / mo` : labels.caption;
 
   return (
-    <OptionCard selected={selected} onSelect={onSelect} style={styles.planCard}>
-      <View style={styles.planRow}>
-        {selected ? (
-          <HugeiconsIcon icon={CheckmarkCircle02Icon} size={26} color={colors.accent} />
-        ) : (
-          <View style={[styles.radio, { borderColor: colors.track }]} />
-        )}
-        <View style={styles.planTitle}>
-          <ThemedText variant="title3">{labels.title}</ThemedText>
+    <OptionCard
+      selected={selected}
+      onSelect={onSelect}
+      accessibilityLabel={`${labels.title}, ${plan.product.priceString} ${caption}`}
+      style={{ width }}>
+      <View style={styles.planBody}>
+        <View style={styles.planTopRow}>
           {savings !== null && (
             <View style={[styles.saveBadge, { backgroundColor: colors.accentBg }]}>
               <ThemedText variant="caption" weight="semibold" tone="accent">
@@ -121,13 +148,19 @@ function PlanCard({
               </ThemedText>
             </View>
           )}
+          <View style={styles.planIndicator}>
+            {selected ? (
+              <HugeiconsIcon icon={CheckmarkCircle02Icon} size={INDICATOR_SIZE} color={colors.accent} />
+            ) : (
+              <View style={[styles.radio, { borderColor: colors.track }]} />
+            )}
+          </View>
         </View>
-        <View style={styles.planPrice}>
-          <ThemedText variant="title3" weight="bold">
-            {plan.product.priceString}
-          </ThemedText>
+        <View style={styles.planText}>
+          <ThemedText variant="title3">{labels.title}</ThemedText>
+          <ThemedText variant="title">{plan.product.priceString}</ThemedText>
           <ThemedText variant="footnote" tone="secondary">
-            {perMonth ? `${perMonth} / mo` : labels.caption}
+            {caption}
           </ThemedText>
         </View>
       </View>
@@ -152,7 +185,14 @@ export default function PaywallScreen() {
 
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
   const { available, refresh, restore } = useSubscription();
+
+  // The carousel bleeds past the screen's content padding, so the card width is
+  // measured off the full screen rather than the column it aligns to.
+  const planWidth = (screenWidth - spacing.lg * 2 - PLAN_GAP * 2) / VISIBLE_PLANS;
+  const planStride = planWidth + PLAN_GAP;
+  const plansRef = useRef<ScrollView>(null);
 
   const [plans, setPlans] = useState<PurchasesPackage[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -190,6 +230,26 @@ export default function PaywallScreen() {
 
   const selected = plans?.find((plan) => plan.identifier === selectedId) ?? null;
   const savings = plans ? annualSavings(plans) : null;
+
+  // Tapping a card also centres it, so the selection and what the customer is
+  // looking at never disagree.
+  const selectPlan = (index: number) => {
+    const plan = plans?.[index];
+    if (!plan) return;
+    setSelectedId(plan.identifier);
+    plansRef.current?.scrollTo({ x: index * planStride, animated: true });
+  };
+
+  // The CTA buys the selected plan, so a card scrolled to must become the
+  // selected one — otherwise the button charges for a plan that is off-screen.
+  const syncSelectionToScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (!plans?.length) return;
+    const index = Math.round(event.nativeEvent.contentOffset.x / planStride);
+    const plan = plans[Math.min(Math.max(index, 0), plans.length - 1)];
+    if (!plan || plan.identifier === selectedId) return;
+    Haptics.selectionAsync();
+    setSelectedId(plan.identifier);
+  };
 
   const buy = async () => {
     if (!selected || busy) return;
@@ -298,17 +358,30 @@ export default function PaywallScreen() {
             </ThemedText>
           </View>
         ) : (
-          <View style={styles.plans}>
-            {plans?.map((plan) => (
+          <ScrollView
+            ref={plansRef}
+            horizontal
+            accessibilityRole="radiogroup"
+            showsHorizontalScrollIndicator={false}
+            decelerationRate="fast"
+            snapToInterval={planStride}
+            snapToAlignment="start"
+            onMomentumScrollEnd={syncSelectionToScroll}
+            // overflow:visible — the cards' interactive glass press response
+            // grows past their bounds and a clipping ScrollView shears it off.
+            style={styles.plans}
+            contentContainerStyle={styles.plansContent}>
+            {plans?.map((plan, index) => (
               <PlanCard
                 key={plan.identifier}
                 plan={plan}
                 selected={plan.identifier === selectedId}
                 savings={plan.packageType === PACKAGE_TYPE.ANNUAL ? savings : null}
-                onSelect={() => setSelectedId(plan.identifier)}
+                width={planWidth}
+                onSelect={() => selectPlan(index)}
               />
             ))}
-          </View>
+          </ScrollView>
         )}
 
         <PrimaryButton
@@ -412,38 +485,43 @@ const styles = StyleSheet.create({
     minHeight: spacing.xxxl,
   },
   plans: {
-    gap: spacing.lg,
+    // Bleeds edge to edge so cards can scroll past the content column, then
+    // re-pads its content so the first card still lines up with it.
+    marginHorizontal: -spacing.lg,
+    overflow: 'visible',
+    // ScrollView's own base style is flexGrow:1, so in this column it would
+    // eat the spacer's slack and stretch the cards. It must hug its content.
+    flexGrow: 0,
+  },
+  plansContent: {
+    paddingHorizontal: spacing.lg,
+    gap: PLAN_GAP,
   },
   plansLoading: {
     minHeight: 120,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  planCard: {
-    minHeight: 72,
-    justifyContent: 'center',
+  planBody: {
+    padding: spacing.lg,
+    gap: spacing.lg,
   },
-  planRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.lg,
-  },
-  radio: {
-    width: 24,
-    height: 24,
-    borderRadius: radius.full,
-    borderWidth: 2,
-  },
-  planTitle: {
-    flex: 1,
+  planTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    minHeight: INDICATOR_SIZE,
   },
-  planPrice: {
-    alignItems: 'flex-end',
+  planIndicator: {
+    marginLeft: 'auto',
+  },
+  radio: {
+    width: INDICATOR_SIZE,
+    height: INDICATOR_SIZE,
+    borderRadius: radius.full,
+    borderWidth: 2,
+  },
+  planText: {
     gap: spacing.xxs,
   },
   saveBadge: {
